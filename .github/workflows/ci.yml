@@ -1,0 +1,35 @@
+name: Workbench checks
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - run: python -m pytest backend/tests -q
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: python scripts/seed_qa.py
+      - run: |
+          DATABASE_URL="sqlite:///$PWD/tmp/qa/fixture.db" ENABLE_SCHEDULER=false PYTHONPATH=backend uvicorn main:app --host 127.0.0.1 --port 8090 > /tmp/api.log 2>&1 &
+          cd frontend
+          npm run dev -- --host 127.0.0.1 > /tmp/vite.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:5173/api/health && break || sleep 1; done
+          npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-failures
+          path: frontend/test-results

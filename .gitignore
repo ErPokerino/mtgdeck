@@ -1,0 +1,40 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.vite/
+
+# Local Database & Cache
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.json
+data/cache/
+
+# Environment & Secrets
+.env
+.env.local
+backend/.env
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local generated artifacts, QA data and bulk card cache
+tmp/
+output/
+data/*.gz
+*.tsbuildinfo
+frontend/test-results/
+frontend/playwright-report/

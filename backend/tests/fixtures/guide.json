@@ -1,0 +1,46 @@
+{
+  "deck_name": "QA Reference Primer",
+  "format_id": "modern",
+  "model_id": "offline-fixture",
+  "generated_at": "2026-11-02T00:00:00Z",
+  "executive_summary": "Guida dimostrativa per verificare lettura, archivio ed esportazione. Non è una proposta di torneo.",
+  "pro_score": 5,
+  "pro_score_rationale": "Fixture di test, non una valutazione competitiva.",
+  "meta_positioning": "Dati sintetici per i test.",
+  "early_game_plan": "Verifica il piano iniziale.",
+  "mid_game_plan": "Verifica le risorse.",
+  "late_game_plan": "Verifica il finale.",
+  "mulligan_heuristics": "Una mano deve avere un piano.",
+  "strengths": [
+    "Contenuto leggibile"
+  ],
+  "weaknesses": [
+    "Dati sintetici"
+  ],
+  "card_roles": [],
+  "synergies": [],
+  "sideboard_guide": [],
+  "meta_estimate": {
+    "weighted_winrate_pct": 52,
+    "coverage_pct": 50,
+    "uncovered_share_pct": 50,
+    "formula": "Somma(quota meta × WR teorico Bo3) / somma(quote coperte)",
+    "note": "Stima sintetica per i test. Non sono risultati di partite.",
+    "rows": [
+      {
+        "archetype": "Aggro test",
+        "share_pct": 30,
+        "winrate_pct": 60
+      },
+      {
+        "archetype": "Control test",
+        "share_pct": 20,
+        "winrate_pct": 40
+      }
+    ],
+    "missing_archetypes": [
+      "Combo test"
+    ],
+    "source": "Offline QA fixture"
+  }
+}

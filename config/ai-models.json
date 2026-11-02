@@ -1,0 +1,78 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-11-01",
+  "defaultProvider": "gemini-api-key",
+  "tiers": {
+    "simple": {
+      "defaultModelId": "gemini-3.5-flash-lite",
+      "userSelectable": false,
+      "description": "Task veloci (default): normalizzazione query, riparazione validazione mazzo e classificazione rapida"
+    },
+    "complex": {
+      "defaultModelId": "gemini-3.8-flash",
+      "userSelectable": true,
+      "description": "Task complessi selezionabili dall'utente: generazione mazzo competitivo, guida pro e analisi matchup spot"
+    }
+  },
+  "models": [
+    {
+      "id": "gemini-3.5-flash-lite",
+      "label": "Gemini Flash Lite 3.5",
+      "tier": "simple",
+      "enabled": true,
+      "isDefaultSimple": true,
+      "providerModelMap": {
+        "gemini-api-key": "gemini-3.5-flash-lite",
+        "vertex-ai": "gemini-3.5-flash-lite"
+      },
+      "description": "Modello ultra-rapido e a bassa latenza per task semplici e validazione strutturata."
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "label": "Gemini Flash 3.8",
+      "tier": "complex",
+      "enabled": true,
+      "isDefaultComplex": true,
+      "providerModelMap": {
+        "gemini-api-key": "gemini-3.8-flash",
+        "vertex-ai": "gemini-3.8-flash"
+      },
+      "description": "Bilanciamento ottimale tra ragionamento strategico MTG e velocità di risposta."
+    },
+    {
+      "id": "gemini-4-argon",
+      "label": "Gemini Argon",
+      "tier": "complex",
+      "enabled": true,
+      "isDefaultComplex": false,
+      "providerModelMap": {
+        "gemini-api-key": "gemini-4-argon",
+        "vertex-ai": "gemini-4-argon"
+      },
+      "replacementNotice": "Predisposto per l'aggiornamento drop-in a Gemini Carbon modificando questo file.",
+      "description": "Massima profondità di ragionamento per deckbuilding complesso, sideboard guide e analisi matchup."
+    }
+  ],
+  "skills": {
+    "deck_generation": {
+      "tier": "complex",
+      "promptVersion": "v1",
+      "maxValidationRetries": 3
+    },
+    "deck_guide": {
+      "tier": "complex",
+      "promptVersion": "v1",
+      "maxValidationRetries": 2
+    },
+    "matchup_spot": {
+      "tier": "complex",
+      "promptVersion": "v1",
+      "maxValidationRetries": 2
+    },
+    "deck_repair": {
+      "tier": "simple",
+      "promptVersion": "v1",
+      "maxValidationRetries": 1
+    }
+  }
+}

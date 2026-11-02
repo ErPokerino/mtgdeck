@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#141B2D"/>
+      <stop offset="100%" stop-color="#090B10"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="12" y1="8" x2="52" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F3E5C8"/>
+      <stop offset="50%" stop-color="#C8AA6E"/>
+      <stop offset="100%" stop-color="#8C6D32"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg)" stroke="url(#gold)" stroke-width="3"/>
+  <!-- 5 Mana Pentagram Dots -->
+  <circle cx="32" cy="11" r="2.3" fill="#F8F6D8"/>
+  <circle cx="51" cy="25" r="2.3" fill="#4DA6FF"/>
+  <circle cx="44" cy="48" r="2.3" fill="#A78BFA"/>
+  <circle cx="20" cy="48" r="2.3" fill="#F87171"/>
+  <circle cx="13" cy="25" r="2.3" fill="#4ADE80"/>
+  <!-- Central Planeswalker / Lotus Crest -->
+  <path d="M32 14L42 29L36 48H28L22 29L32 14Z" fill="url(#gold)" fill-opacity="0.18" stroke="url(#gold)" stroke-width="2.2" stroke-linejoin="round"/>
+  <path d="M32 16V49M22 29L32 35L42 29" stroke="url(#gold)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
