@@ -108,11 +108,9 @@ test("library has clear storage, archive and version navigation", async ({
   await page
     .getByPlaceholder("Cerca per nome o archetipo")
     .fill("Fable interaction");
-  const card = page
-    .locator("section")
-    .filter({
-      has: page.getByRole("heading", { name: fixture.name, exact: true }),
-    });
+  const card = page.locator("section").filter({
+    has: page.getByRole("heading", { name: fixture.name, exact: true }),
+  });
   await expect(card).toBeVisible();
   await card.getByRole("button", { name: "Versioni" }).click();
   await expect(
@@ -322,4 +320,70 @@ test("saved guide exposes weighted estimate, coverage and downloadable PDF", asy
   const result = await request.get((await link.getAttribute("href"))!);
   expect(result.headers()["content-type"]).toContain("application/pdf");
   expect((await result.body()).subarray(0, 4).toString()).toBe("%PDF");
+});
+
+test("playtest accepts first play and drag without a separate keep click", async ({
+  page,
+}) => {
+  await openPlaytest(page);
+  const hand = page.locator('[data-testid="playtest-card"][data-zone="hand"]');
+  await hand
+    .first()
+    .getByRole("button", { name: "Gioca", exact: true })
+    .click();
+  await expect(page.getByRole("heading", { name: "Mano (6)" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Tieni mano (7)" }),
+  ).toHaveCount(0);
+  const next = page
+    .locator('[data-testid="playtest-card"][data-zone="hand"]')
+    .first();
+  await next.dragTo(page.getByRole("region", { name: "Permanenti" }));
+  await expect(page.getByRole("heading", { name: "Mano (5)" })).toBeVisible();
+});
+
+test("AI Studio supports selecting five colors and custom combinations", async ({
+  page,
+}) => {
+  await page.goto("/?format=modern&tab=ai_studio");
+  for (const c of ["W", "U", "B", "R", "G"])
+    await expect(
+      page.getByRole("button", { name: `Colore ${c}` }),
+    ).toBeVisible();
+  await page.getByRole("button", { name: "Colore W" }).click();
+  await expect(page.getByRole("button", { name: "Colore W" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByText("Combinazione: Esper")).toBeVisible();
+});
+
+test("main sections navigate without client errors", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/?format=modern&tab=deckbuilder");
+  await expect(page.getByPlaceholder("Nome del mazzo...")).toBeVisible();
+  await page.getByRole("button", { name: "Set & Banlist" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Formato Modern" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Metagame" }).click();
+  await expect(
+    page.getByText("Metagame", { exact: false }).first(),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "AI Studio" }).click();
+  await expect(
+    page.getByRole("heading", { name: "AI Studio", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Playtest", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Playtest", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Mazzi e guide", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Mazzi e guide", exact: true }),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
 });

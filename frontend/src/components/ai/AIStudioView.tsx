@@ -18,6 +18,7 @@ import type {
   FormatId,
   MetaArchetypeInfo,
 } from "../../types";
+import { ColorBadges } from "../common/ManaCost";
 import { GuideReader } from "../library/GuideReader";
 import { CardInfoModal } from "../common/CardInfoModal";
 
@@ -83,6 +84,7 @@ export function AIStudioView({
     [decks, setDecks] = useState<DeckSummary[]>([]),
     [archetypes, setArchetypes] = useState<MetaArchetypeInfo[]>([]);
   const [color, setColor] = useState("Dimir"),
+    [customColors, setCustomColors] = useState<string[]>([]),
     [archetype, setArchetype] = useState("midrange"),
     [prompt, setPrompt] = useState(""),
     [buildAround, setBuildAround] = useState<string[]>([]);
@@ -226,7 +228,10 @@ export function AIStudioView({
     setGenLoading(true);
     setGenError("");
     try {
-      const colors = combinations.find(([n]) => n === color)?.[1] || [];
+      const colors =
+        color === "Personalizzato"
+          ? customColors
+          : combinations.find(([n]) => n === color)?.[1] || [];
       const result = await api.generateDeckAI({
         format_id: formatId,
         prompt,
@@ -455,6 +460,9 @@ export function AIStudioView({
                   {combinations.map(([name]) => (
                     <option key={name}>{name}</option>
                   ))}
+                  {color === "Personalizzato" && (
+                    <option>Personalizzato</option>
+                  )}
                 </select>
               </label>
               <label className="text-sm">
@@ -477,6 +485,56 @@ export function AIStudioView({
                 </select>
               </label>
             </div>
+            <fieldset className="space-y-2">
+              <legend className="text-sm text-slate-200">
+                Seleziona i colori desiderati
+              </legend>
+              <div className="flex flex-wrap gap-2">
+                {["W", "U", "B", "R", "G"].map((c) => {
+                  const current =
+                    color === "Personalizzato"
+                      ? customColors
+                      : combinations.find(([n]) => n === color)?.[1] || [];
+                  const selected = current.includes(c);
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      aria-label={`Colore ${c}`}
+                      aria-pressed={selected}
+                      className={selected ? "btn-primary" : "btn-secondary"}
+                      onClick={() => {
+                        const next = selected
+                          ? current.filter((x) => x !== c)
+                          : [...current, c];
+                        const preset = combinations.find(
+                          ([, cols]) =>
+                            cols.length === next.length &&
+                            cols.every((x) => next.includes(x)),
+                        );
+                        setCustomColors(next);
+                        setColor(preset?.[0] || "Personalizzato");
+                      }}
+                    >
+                      <ColorBadges colors={[c]} size="md" />
+                      {c}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-slate-400">
+                Combinazione: {color}{" "}
+                {color !== "Libero" && (
+                  <ColorBadges
+                    colors={
+                      color === "Personalizzato"
+                        ? customColors
+                        : combinations.find(([n]) => n === color)?.[1] || []
+                    }
+                  />
+                )}
+              </p>
+            </fieldset>
             <div>
               <label className="text-sm block mb-2" htmlFor="buildaround">
                 Carte attorno a cui costruire
@@ -712,6 +770,17 @@ export function AIStudioView({
                     <option value="custom">Incolla una lista</option>
                   </select>
                 </label>
+                {modeB === "meta" && archB && (
+                  <div className="flex items-center gap-2 text-sm text-slate-300">
+                    <ColorBadges
+                      colors={
+                        archetypes.find((a) => a.id === archB)?.colors || []
+                      }
+                      size="md"
+                    />{" "}
+                    {archetypes.find((a) => a.id === archB)?.name}
+                  </div>
+                )}
                 {modeB === "meta" ? (
                   <select
                     aria-label="Archetipo avversario"

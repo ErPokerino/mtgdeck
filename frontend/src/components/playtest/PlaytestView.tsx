@@ -112,10 +112,13 @@ export function PlaytestView({
       ) as Record<Zone, number>,
     [game.cards],
   );
+  const openingBlocked = game.opening && bottom.length !== game.mulligans;
   const commit = (fn: (g: Game) => Game, label: string) => {
     setPast((p) => [...p.slice(-29), game]);
     setGame((g) => {
-      const next = fn(g);
+      const ready = g.opening ? keep(g, bottom) : g;
+      if (ready.opening) return g;
+      const next = fn(ready);
       return {
         ...next,
         log: [`T${g.turn} · ${label}`, ...next.log].slice(0, 100),
@@ -128,7 +131,7 @@ export function PlaytestView({
     zone: Zone,
     position: "top" | "bottom" = "bottom",
   ) => {
-    if (game.opening) return;
+    if (openingBlocked || (game.opening && bottom.includes(uid))) return;
     const card = game.cards.find((c) => c.uid === uid);
     commit(
       (g) => ({ ...g, cards: moved(g.cards, uid, zone, position) }),
@@ -136,7 +139,7 @@ export function PlaytestView({
     );
   };
   const play = (uid: string) => {
-    if (game.opening) return;
+    if (openingBlocked || (game.opening && bottom.includes(uid))) return;
     const card = game.cards.find((c) => c.uid === uid);
     commit(
       (g) => ({ ...g, cards: played(g.cards, uid) }),
@@ -182,7 +185,7 @@ export function PlaytestView({
     );
   };
   const createToken = (card: Card, face = 0) => {
-    if (game.opening) return;
+    if (openingBlocked) return;
     const uid = crypto.randomUUID();
     commit(
       (g) => ({
@@ -233,8 +236,10 @@ export function PlaytestView({
   };
   const dropped = (event: React.DragEvent, zone: Zone) => {
     event.preventDefault();
-    if (game.opening) return;
-    const uid = event.dataTransfer.getData("text/mtg-uid");
+    if (openingBlocked) return;
+    const uid =
+      event.dataTransfer.getData("text/mtg-uid") ||
+      event.dataTransfer.getData("text/plain");
     if (uid) move(uid, zone);
   };
   const cardTile = (inst: Instance) => {
@@ -249,8 +254,12 @@ export function PlaytestView({
         data-zone={inst.zone}
         className={`shrink-0 rounded-xl border p-1.5 bg-[#101a28] ${marked ? "border-amber-300 ring-2 ring-amber-400" : selected === inst.uid ? "border-sky-300" : "border-slate-700"}`}
         style={{ width: zoom + 12 }}
-        draggable={!game.opening}
-        onDragStart={(e) => e.dataTransfer.setData("text/mtg-uid", inst.uid)}
+        draggable={!openingBlocked}
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/mtg-uid", inst.uid);
+          e.dataTransfer.setData("text/plain", inst.uid);
+          e.dataTransfer.effectAllowed = "move";
+        }}
       >
         <button
           className="relative block w-full aspect-[63/88] rounded-lg overflow-hidden bg-[#172435] cursor-pointer"
@@ -315,7 +324,7 @@ export function PlaytestView({
         <div className="flex gap-1">
           <button
             className="btn-secondary text-xs! px-2! py-1.5! flex-1"
-            disabled={game.opening}
+            disabled={openingBlocked}
             onClick={() =>
               battlefield(inst.zone) ? tap(inst.uid) : play(inst.uid)
             }
@@ -464,14 +473,14 @@ export function PlaytestView({
             <button
               className="btn-primary"
               onClick={draw}
-              disabled={game.opening || !counts.library}
+              disabled={openingBlocked || !counts.library}
             >
               <Layers size={15} />
               Pesca 1 ({counts.library})
             </button>
             <button
               className="btn-secondary"
-              disabled={game.opening}
+              disabled={openingBlocked}
               onClick={() =>
                 commit((g) => {
                   let drawn = false;
@@ -493,7 +502,7 @@ export function PlaytestView({
             </button>
             <button
               className="btn-secondary"
-              disabled={game.opening}
+              disabled={openingBlocked}
               onClick={() =>
                 commit(
                   (g) => ({
@@ -555,7 +564,7 @@ export function PlaytestView({
                 <p className="text-sm text-slate-300 mt-1">
                   {game.mulligans
                     ? `Seleziona ${game.mulligans} carte in mano da mettere in fondo (${bottom.length}/${game.mulligans}), poi conferma.`
-                    : "Esamina le carte e scegli se tenere. Per giocare, conferma prima la mano."}
+                    : "Esamina la mano: puoi tenerla oppure iniziare subito a giocare; la prima azione la conferma automaticamente."}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -624,7 +633,7 @@ export function PlaytestView({
                 </button>
                 <button
                   className="btn-secondary"
-                  disabled={game.opening}
+                  disabled={openingBlocked}
                   onClick={() =>
                     commit(
                       (g) => ({
@@ -666,7 +675,7 @@ export function PlaytestView({
                     <div className="space-y-2">
                       <button
                         className="btn-secondary w-full"
-                        disabled={game.opening || !counts.library}
+                        disabled={openingBlocked || !counts.library}
                         onClick={() => setPeek((v) => !v)}
                       >
                         <Eye size={15} />
@@ -749,14 +758,14 @@ export function PlaytestView({
                             <div className="flex flex-wrap gap-2 mt-2">
                               <button
                                 className="btn-secondary px-2! py-1! text-xs!"
-                                disabled={game.opening}
+                                disabled={openingBlocked}
                                 onClick={() => move(inst.uid, "hand")}
                               >
                                 In mano
                               </button>
                               <button
                                 className="btn-secondary px-2! py-1! text-xs!"
-                                disabled={game.opening}
+                                disabled={openingBlocked}
                                 onClick={() => play(inst.uid)}
                               >
                                 Gioca
@@ -837,7 +846,7 @@ export function PlaytestView({
                 <p className="text-sm text-slate-300 whitespace-pre-line leading-relaxed">
                   {chosenFace.oracle_text}
                 </p>
-                {game.opening ? (
+                {openingBlocked ? (
                   <p className="text-amber-200 text-sm">
                     Conferma “Tieni mano” prima di spostare carte o creare
                     pedine. Puoi esaminare entrambe le facce.
