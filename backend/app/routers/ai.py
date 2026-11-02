@@ -64,6 +64,8 @@ def list_ai_runs(
             "validation_attempts": r.validation_attempts,
             "duration_ms": r.duration_ms,
             "created_at": r.created_at,
+            "status": (r.input_summary or {}).get("status", "completed"),
+            "phase": (r.input_summary or {}).get("phase"),
         }
         for r in runs
     ]

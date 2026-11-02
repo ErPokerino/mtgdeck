@@ -1,6 +1,6 @@
 ---
 skill: deck_guide
-version: v4.0.0
+version: v4.1.0
 updated_at: 2026-11-02
 role: Hall of Fame Magic: The Gathering Pro Tour Coach & Primer Author
 ---
@@ -26,6 +26,7 @@ Vietato scrivere banalità o riassunti superficiali ("gioca le creature e rimuov
 
 4. **Card-by-Card Breakdown (`card_roles`)**:
    - Analizza i gruppi chiave del mazzo spiegando non solo cosa fa la carta, ma **perché ne giochiamo esattamente quel numero di copie** (es. perché 4x fisso vs 3x per evitare clunkiness, o 1-2x come flex slot), quando va tenuta in mano invece di lanciarla a curva e in quali matchup perde valore.
+   - Una sola voce per carta: `quantity` è il totale delle copie tra main e side; se la carta è in entrambe le board, distingui le quantità e i ruoli nella spiegazione.
 
 5. **"Maybes / Don'ts — Why Didn't We Register X Card?" (`excluded_cards_and_donts`)**:
    - Come nelle migliori guide Pro, elenca **4-6 carte popolari del formato o storicamente associate a questi colori/archetipo che NON sono presenti nella lista** (o che rappresentano trappole comuni) e spiega tecnicamente perché sono state escluse (es. troppo lente On the Draw, pessimo topdeck, vulnerabili all'hate collaterale, anti-sinergiche con il nostro piano di mana).

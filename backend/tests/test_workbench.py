@@ -506,6 +506,12 @@ def test_oracle_audit_blocks_unresolved_contradictions(
         )
     assert db.query(GuideVersion).count() == 0
     assert db.get(Deck, did).guide_json == previous_guide
+    from app.models import AIRun
+
+    failure = db.query(AIRun).one()
+    assert failure.output_json["status"] == "failed"
+    assert "Revisione Oracle" in failure.output_json["error"]
+    assert failure.output_json["draft"] is not None
 
 
 def test_guide_repairs_coverage_then_oracle_before_saving(
@@ -645,3 +651,26 @@ def test_unavailable_estimate_explains_the_actual_cause():
         unmatched["status"] == "no_matchups"
         and unmatched["weighted_winrate_pct"] is None
     )
+
+
+@pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
+def test_provider_failure_diagnostic_does_not_store_credentials(
+    db, monkeypatch, error_type
+):
+    from app.models import AIRun
+
+    class Provider:
+        provider_name = "fake"
+
+        def generate_structured(self, **kwargs):
+            raise error_type("request credential=private-key-example")
+
+    monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
+    with pytest.raises(error_type):
+        runner.run_deck_guide_skill(
+            db, AIDeckGuideRequest(format_id="modern", decklist_text="60 Plains")
+        )
+    failure = db.query(AIRun).one()
+    assert failure.output_json["phase"] == "draft"
+    assert failure.output_json["error"] == error_type.__name__
+    assert db.query(GuideVersion).count() == 0

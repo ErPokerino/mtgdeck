@@ -45,6 +45,8 @@ Le guide passano un ciclo **bozza → controlli deterministici → revisione Ora
 
 Ogni nuova guida include `meta_estimate`, anche quando il calcolo non è possibile: `status` e `reason` distinguono snapshot assente, quote incoerenti e matchup non corrispondenti. Il messaggio delle versioni storiche senza dati non viene usato per questi casi.
 
+Le fasi della generazione vengono registrate nei log del backend. Un tentativo fallito conserva una diagnostica e l’ultima bozza in `ai_runs`, separatamente dalle guide pubblicate, per poter analizzare gli errori senza ricreare il testo. Le eccezioni del provider vengono registrate solo per tipo, senza contenuti della richiesta o credenziali.
+
 ## Playtest
 
 Il playtest è un sandbox solitario manuale, non un motore di regole né un avversario AI. Il campo mostra due corsie distinte: creature e altri permanenti sopra, terre e fonti sotto; la mano rimane separata. Le corsie scorrono orizzontalmente quando contengono molte carte. La prima azione conferma automaticamente la mano; dopo un London mulligan devi prima selezionare il numero corretto di carte da mettere in fondo. Puoi giocare, tappare, spostare, pescare, fare scry/surveil, cambiare vite, segnalini, mescolare e annullare un'azione.

@@ -29,7 +29,10 @@ def validate_swaps(plan, entries, in_field="cards_in", out_field="cards_out"):
     if sum(i["quantity"] for i in plan.get(in_field, [])) != sum(
         i["quantity"] for i in plan.get(out_field, [])
     ):
-        errors.append(f"{in_field}/{out_field}: IN e OUT non bilanciati.")
+        errors.append(
+            f"{in_field}/{out_field}: IN ({sum(i['quantity'] for i in plan.get(in_field, []))}) "
+            f"e OUT ({sum(i['quantity'] for i in plan.get(out_field, []))}) non bilanciati."
+        )
     return errors
 
 
@@ -45,7 +48,9 @@ def validate_guide(guide, entries, include_rules=True):
     for role in guide.get("card_roles", []):
         if role["quantity"] != quantities[key(role["card_name"])]:
             errors.append(
-                f"Card breakdown: nome o quantità incoerente per {role['card_name']}."
+                f"Card breakdown: {role['card_name']}: ricevute {role['quantity']} copie, "
+                f"attese {quantities[key(role['card_name'])]} copie complessive tra main e side. "
+                "Usa un’unica voce con il nome esatto e il totale fornito dalla lista."
             )
     for ex in guide.get("mulligan_examples", []):
         hand = Counter(key(n) for n in ex["hand_cards"])
