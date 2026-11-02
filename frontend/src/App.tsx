@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api/client";
 import { LibraryView } from "./components/library/LibraryView";
+import { Onboarding } from "./components/layout/Onboarding";
 import { AIStudioView } from "./components/ai/AIStudioView";
 import { DeckBuilderView } from "./components/deckbuilder/DeckBuilderView";
 import { FormatExplorerView } from "./components/formats/FormatExplorerView";
@@ -85,6 +86,7 @@ export const App: React.FC = () => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [helpToken, setHelpToken] = useState(0);
 
   // Initialize first history entry
   useEffect(() => {
@@ -286,6 +288,7 @@ export const App: React.FC = () => {
         settings={settings}
         onChangeComplexModel={handleChangeComplexModel}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenHelp={() => setHelpToken((v) => v + 1)}
       />
 
       <main className="flex-1 min-w-0">
@@ -423,6 +426,12 @@ export const App: React.FC = () => {
         syncStatus={syncStatus}
         onSaveSettings={handleSaveSettings}
         onTriggerScryfallSync={(force) => handleTriggerSync(force)}
+      />
+      <Onboarding
+        suspended={isSettingsOpen}
+        restartToken={helpToken}
+        onNavigate={(tab) => navigateTo({ tab })}
+        onSettings={() => setIsSettingsOpen(true)}
       />
     </div>
   );

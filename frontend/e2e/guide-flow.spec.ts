@@ -28,119 +28,234 @@ const approvedGuide = {
   },
 };
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem("aetherdeck.onboarding.v1", "seen"),
+  );
+});
 test.beforeAll(async ({ request }) => {
-  const result = await request.post("/api/decks/import", {
+  const r = await request.post("/api/decks/import", {
     data: { name: "QA · Guide flow", format_id: "modern", text: "60 Mountain" },
   });
-  expect(result.ok()).toBeTruthy();
-  deck = (await result.json()).deck;
+  expect(r.ok()).toBeTruthy();
+  deck = (await r.json()).deck;
 });
 test.afterAll(async ({ request }) => {
   if (deck) await request.delete(`/api/decks/${deck.id}`);
 });
-
-async function openGuide(page: Page) {
+async function openGuide(page: Page, select = true) {
   await page.route("**/api/settings", async (route) => {
-    const response = await route.fetch();
+    const r = await route.fetch();
     await route.fulfill({
-      json: { ...(await response.json()), has_gemini_api_key: true },
+      json: { ...(await r.json()), has_gemini_api_key: true },
     });
   });
-  await page.goto("/?format=modern&tab=ai");
-  await page.getByRole("button", { name: "AI Studio", exact: true }).click();
+  await page.goto("/?format=modern&tab=ai_studio");
   await page
     .getByRole("button", { name: "Guida e sideboard", exact: true })
     .click();
-  await page
-    .getByRole("combobox", { name: "Lista da analizzare" })
-    .selectOption(String(deck.id));
+  if (select)
+    await page
+      .getByRole("combobox", { name: "Lista da analizzare" })
+      .selectOption(String(deck.id));
+}
+function job(id = 100) {
+  return {
+    id,
+    deck_id: deck.id,
+    format_id: "modern",
+    deck_name: deck.name,
+    model_id: "gemini-3.8-flash",
+    status: "running",
+    phase: "oracle_review",
+    has_draft: true,
+    created_at: new Date().toISOString(),
+    budget_seconds: 240,
+  };
 }
 
-test("failed regeneration removes the old guide; retry shows only the approved weighted result", async ({
+test("failed verification preserves draft; resume completes without generating again", async ({
   page,
 }) => {
+  let current: any = null,
+    starts = 0,
+    resumes = 0;
+  await page.route("**/api/ai/guide-jobs**", async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === "POST") {
+      if (url.pathname.endsWith("/resume")) {
+        resumes++;
+        current = { ...job(101) };
+      } else {
+        starts++;
+        current = job();
+      }
+      await route.fulfill({ json: current });
+    } else if (/\/guide-jobs\/\d+$/.test(url.pathname))
+      await route.fulfill({ json: current });
+    else await route.fulfill({ json: { jobs: [], legacy_drafts: [] } });
+  });
   await page.route(`**/api/decks/${deck.id}`, (route) =>
     route.fulfill({ json: { ...deck, guide_json: archivedGuide } }),
   );
-  let complete: (() => void) | undefined;
-  let attempts = 0;
-  await page.route("**/api/ai/deck-guide", async (route) => {
-    attempts++;
-    await new Promise<void>((resolve) => {
-      complete = resolve;
-    });
-    await route.fulfill(
-      attempts === 1
-        ? {
-            status: 400,
-            json: { detail: "Guida non salvata: revisione non superata" },
-          }
-        : { json: { guide: approvedGuide, meta: { guide_id: 1234 } } },
-    );
-  });
   await openGuide(page);
   await expect(
     page.getByRole("heading", { name: archivedGuide.deck_name }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Genera nuova versione" }).click();
-  await expect(page.getByText("Preparazione della nuova guida")).toBeVisible();
   await expect(
-    page.getByRole("combobox", { name: "Lista da analizzare" }),
-  ).toBeDisabled();
+    page.getByRole("region", { name: "Stato generazione guida" }),
+  ).toContainText("Revisione Oracle");
   await expect(page.locator(".guide-reader")).toHaveCount(0);
-  await expect.poll(() => !!complete).toBeTruthy();
-  complete!();
-  await expect(page.getByRole("alert")).toContainText(
-    "Nessuna nuova versione salvata",
-  );
+  current = {
+    ...current,
+    status: "failed",
+    error: "La verifica richiede un altro passaggio.",
+  };
+  await expect(
+    page.getByRole("button", { name: "Riprendi revisione della bozza" }),
+  ).toBeVisible();
   await expect(page.locator(".guide-reader")).toHaveCount(0);
-  complete = undefined;
-  await page.getByRole("button", { name: "Genera e salva guida" }).click();
-  await expect.poll(() => !!complete).toBeTruthy();
-  complete!();
+  await page
+    .getByRole("button", { name: "Riprendi revisione della bozza" })
+    .click();
+  current = {
+    ...current,
+    status: "completed",
+    result: { guide: approvedGuide, meta: { guide_id: 1234 } },
+  };
   await expect(
     page.getByRole("heading", { name: approvedGuide.deck_name }),
   ).toBeVisible();
   await expect(page.getByText("52.0%", { exact: true })).toBeVisible();
-  await expect(page.getByRole("status")).toContainText("2 cicli di correzione");
-  await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByText("Non disponibile", { exact: true })).toHaveCount(
-    0,
-  );
-  await page.getByText("Copertura 50% · Formula e matchup").click();
-  await expect(
-    page.getByRole("cell", { name: "Aggro", exact: true }),
-  ).toBeVisible();
-  await page.screenshot({
-    path: "../tmp/qa/guide-approved.png",
-    fullPage: true,
-  });
+  expect(starts).toBe(1);
+  expect(resumes).toBe(1);
+  await page.screenshot({ path: "../tmp/qa/guide-job-completed.png" });
 });
 
-test("a late response loading an archived guide cannot replace the newly generated guide", async ({
+test("running analysis survives reload and cancellation does not show an approved guide", async ({
   page,
 }) => {
-  let releaseArchive: (() => void) | undefined;
+  let current: any = job();
+  await page.route("**/api/ai/guide-jobs**", async (route) => {
+    if (route.request().method() === "POST") {
+      current = { ...current, status: "cancelled" };
+      await route.fulfill({ json: current });
+    } else if (
+      /\/guide-jobs\/\d+$/.test(new URL(route.request().url()).pathname)
+    )
+      await route.fulfill({ json: current });
+    else await route.fulfill({ json: { jobs: [current], legacy_drafts: [] } });
+  });
+  await openGuide(page, false);
+  await expect(
+    page.getByRole("button", { name: "Annulla analisi" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Lista da analizzare" }),
+  ).toHaveValue(String(deck.id));
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Guida e sideboard", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Annulla analisi" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Annulla analisi" }).click();
+  await expect(
+    page.getByRole("region", { name: "Stato generazione guida" }),
+  ).toContainText("Analisi annullata");
+  await expect(page.locator(".guide-reader")).toHaveCount(0);
+});
+
+test("a late archived response cannot overwrite a job result", async ({
+  page,
+}) => {
+  let release: (() => void) | undefined;
   await page.route(`**/api/decks/${deck.id}`, async (route) => {
-    await new Promise<void>((resolve) => {
-      releaseArchive = resolve;
-    });
+    await new Promise<void>((resolve) => (release = resolve));
     await route.fulfill({ json: { ...deck, guide_json: archivedGuide } });
   });
-  await page.route("**/api/ai/deck-guide", (route) =>
-    route.fulfill({ json: { guide: approvedGuide, meta: { guide_id: 1234 } } }),
-  );
+  let current: any = null;
+  await page.route("**/api/ai/guide-jobs**", async (route) => {
+    if (route.request().method() === "POST") {
+      current = {
+        ...job(),
+        status: "completed",
+        result: { guide: approvedGuide, meta: { guide_id: 1234 } },
+      };
+      await route.fulfill({ json: { ...current, status: "running" } });
+    } else if (
+      /\/guide-jobs\/\d+$/.test(new URL(route.request().url()).pathname)
+    )
+      await route.fulfill({ json: current });
+    else await route.fulfill({ json: { jobs: [], legacy_drafts: [] } });
+  });
   await openGuide(page);
-  await expect.poll(() => !!releaseArchive).toBeTruthy();
+  await expect.poll(() => !!release).toBeTruthy();
   await page.getByRole("button", { name: "Genera e salva guida" }).click();
   await expect(
     page.getByRole("heading", { name: approvedGuide.deck_name }),
   ).toBeVisible();
-  const lateResponse = page.waitForResponse(`**/api/decks/${deck.id}`);
-  releaseArchive!();
-  await lateResponse;
+  const response = page.waitForResponse(`**/api/decks/${deck.id}`);
+  release!();
+  await response;
   await expect(
     page.getByRole("heading", { name: archivedGuide.deck_name }),
   ).toHaveCount(0);
-  await expect(page.getByText("52.0%", { exact: true })).toBeVisible();
+});
+
+test("explicit identical play/draw sidata displays the complete base plan", async ({
+  page,
+}) => {
+  const guide = {
+    ...approvedGuide,
+    sideboard_guide: [
+      {
+        opponent_archetype: "Aggro",
+        expected_winrate_pct: 60,
+        cards_in: [{ card_name: "Plains", quantity: 1, reason: "Mana" }],
+        cards_out: [{ card_name: "Mountain", quantity: 1, reason: "Cambio" }],
+        on_the_play_uses_base: true,
+        on_the_draw_uses_base: true,
+        on_the_play_in: [],
+        on_the_play_out: [],
+        on_the_draw_in: [],
+        on_the_draw_out: [],
+      },
+    ],
+  };
+  await page.route("**/api/ai/guide-jobs**", async (route) => {
+    if (route.request().method() === "POST")
+      await route.fulfill({ json: job() });
+    else if (/\/guide-jobs\/\d+$/.test(new URL(route.request().url()).pathname))
+      await route.fulfill({
+        json: {
+          ...job(),
+          status: "completed",
+          result: { guide, meta: { guide_id: 1234 } },
+        },
+      });
+    else await route.fulfill({ json: { jobs: [], legacy_drafts: [] } });
+  });
+  await openGuide(page);
+  await page.getByRole("button", { name: "Genera e salva guida" }).click();
+  const reader = page.locator(".guide-reader");
+  await expect(reader).toBeVisible();
+  await reader
+    .getByRole("button", { name: "On the play", exact: true })
+    .click();
+  await expect(reader.getByText(/Stessa sidata del piano base/)).toBeVisible();
+  await expect(
+    reader.getByRole("button", { name: "Plains", exact: true }),
+  ).toBeVisible();
+  await reader
+    .getByRole("button", { name: "On the draw", exact: true })
+    .click();
+  await expect(
+    reader.getByRole("button", { name: "Mountain", exact: true }),
+  ).toBeVisible();
+  await expect(
+    reader.getByText(/Questa versione non contiene una sidata distinta/),
+  ).toHaveCount(0);
 });

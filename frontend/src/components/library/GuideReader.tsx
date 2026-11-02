@@ -263,8 +263,9 @@ export function GuideReader({
           </div>
         </div>
         {guide.sideboard_guide?.map((plan: any, i: number) => {
-          const inf = side === "base" ? "cards_in" : `on_the_${side}_in`,
-            outf = side === "base" ? "cards_out" : `on_the_${side}_out`;
+          const usesBase = side === "base" || plan[`on_the_${side}_uses_base`];
+          const inf = usesBase ? "cards_in" : `on_the_${side}_in`,
+            outf = usesBase ? "cards_out" : `on_the_${side}_out`;
           const hasPlan = plan[inf]?.length || plan[outf]?.length;
           return (
             <details className="panel" key={i} open={i === 0}>
@@ -294,7 +295,13 @@ export function GuideReader({
                 <p>
                   <strong>Mulligan target:</strong> {plan.mulligan_target}
                 </p>
-                {side !== "base" && !hasPlan ? (
+                {side !== "base" && usesBase && (
+                  <p className="text-sky-200">
+                    Stessa sidata del piano base; applica le note tattiche per{" "}
+                    {side === "play" ? "on the play" : "on the draw"}.
+                  </p>
+                )}
+                {side !== "base" && !usesBase && !hasPlan ? (
                   <p className="text-amber-200">
                     Questa versione non contiene una sidata distinta per {side}.
                     Consulta le note tattiche e il piano base.

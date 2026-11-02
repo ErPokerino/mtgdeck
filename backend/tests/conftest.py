@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from app.database import Base, get_db
 from app.models import Card, Format, SyncLog, utcnow
-from app.routers import decks, guides, settings
+from app.routers import ai, decks, guides, settings
 
 
 @pytest.fixture
@@ -57,6 +57,7 @@ def db(tmp_path):
 @pytest.fixture
 def client(db):
     app = FastAPI()
+    app.include_router(ai.router)
     app.include_router(decks.router)
     app.include_router(guides.router)
     app.include_router(settings.router)

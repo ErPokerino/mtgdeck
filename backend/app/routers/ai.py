@@ -2,7 +2,8 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import AIRun
+from app.models import AIRun, GuideJob, utcnow
+from app.services import guide_jobs
 from app.skills.runner import (
     run_deck_generation_skill,
     run_deck_guide_skill,
@@ -15,6 +16,79 @@ from app.skills.schemas import (
 )
 
 router = APIRouter(prefix="/api/ai", tags=["AI Skills"])
+
+
+@router.post("/guide-jobs")
+def start_guide_job(
+    payload: AIDeckGuideRequest,
+    resume_id: int | None = None,
+    legacy_run_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    try:
+        return guide_jobs.create_job(db, payload, resume_id, legacy_run_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.get("/guide-jobs")
+def guide_job_list(format_id: str, db: Session = Depends(get_db)):
+    jobs = (
+        db.query(GuideJob)
+        .filter_by(format_id=format_id)
+        .order_by(GuideJob.id.desc())
+        .limit(10)
+        .all()
+    )
+    active = (
+        db.query(GuideJob)
+        .filter(
+            GuideJob.format_id == format_id, GuideJob.status.in_(["running", "queued"])
+        )
+        .all()
+    )
+    jobs = sorted(
+        {j.id: j for j in [*jobs, *active]}.values(), key=lambda j: j.id, reverse=True
+    )
+    return {
+        "jobs": [guide_jobs.public_job(j) for j in jobs],
+        "legacy_drafts": guide_jobs.legacy_drafts(db, format_id),
+    }
+
+
+@router.get("/guide-jobs/{job_id}")
+def get_guide_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(GuideJob, job_id)
+    if not job:
+        raise HTTPException(404, "Analisi non trovata")
+    return guide_jobs.public_job(job)
+
+
+@router.post("/guide-jobs/{job_id}/cancel")
+def cancel_guide_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(GuideJob, job_id)
+    if not job:
+        raise HTTPException(404, "Analisi non trovata")
+    if job.status in ("queued", "running"):
+        db.query(GuideJob).filter(
+            GuideJob.id == job_id, GuideJob.status.in_(["queued", "running"])
+        ).update(
+            {"status": "cancelled", "phase": "cancelled", "finished_at": utcnow()},
+            synchronize_session=False,
+        )
+        db.commit()
+        db.refresh(job)
+    return guide_jobs.public_job(job)
+
+
+@router.post("/guide-jobs/{job_id}/resume")
+def resume_guide_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(GuideJob, job_id)
+    if not job:
+        raise HTTPException(404, "Analisi non trovata")
+    return start_guide_job(
+        AIDeckGuideRequest.model_validate(job.request_json), resume_id=job_id, db=db
+    )
 
 
 @router.post("/generate-deck")

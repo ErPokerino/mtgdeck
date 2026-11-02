@@ -27,6 +27,10 @@ scheduler = AsyncIOScheduler()
 async def lifespan(app: FastAPI):
     # 1. Inizializza tabelle SQL + indice FTS5
     Base.metadata.create_all(bind=engine)
+    from app.services.guide_jobs import recover_interrupted_jobs
+
+    with SessionLocal() as jobs_db:
+        recover_interrupted_jobs(jobs_db)
     init_fts5_index()
     from app.models import Deck, GuideVersion
 

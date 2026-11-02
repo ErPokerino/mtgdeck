@@ -172,6 +172,19 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  startGuideJob: (payload: any, legacyRunId?: number) =>
+    apiFetch<any>(
+      `/api/ai/guide-jobs${legacyRunId ? `?legacy_run_id=${legacyRunId}` : ""}`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+  listGuideJobs: (formatId: FormatId) =>
+    apiFetch<any>(`/api/ai/guide-jobs?format_id=${formatId}`),
+  getGuideJob: (id: number) => apiFetch<any>(`/api/ai/guide-jobs/${id}`),
+  cancelGuideJob: (id: number) =>
+    apiFetch<any>(`/api/ai/guide-jobs/${id}/cancel`, { method: "POST" }),
+  resumeGuideJob: (id: number) =>
+    apiFetch<any>(`/api/ai/guide-jobs/${id}/resume`, { method: "POST" }),
+
   analyzeSpotMatchupAI: (payload: {
     format_id: FormatId;
     deck_a_id?: number;

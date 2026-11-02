@@ -148,6 +148,14 @@ class MatchupSideboardPlan(BaseModel):
     on_the_play_out: List[SideboardSwapItem] = Field(default_factory=list)
     on_the_draw_in: List[SideboardSwapItem] = Field(default_factory=list)
     on_the_draw_out: List[SideboardSwapItem] = Field(default_factory=list)
+    on_the_play_uses_base: bool = Field(
+        default=False,
+        description="True solo se la sidata OTP è identica al piano base; lascia vuoti on_the_play_in/out e spiega le differenze tattiche nelle note",
+    )
+    on_the_draw_uses_base: bool = Field(
+        default=False,
+        description="True solo se la sidata OTD è identica al piano base; lascia vuoti on_the_draw_in/out",
+    )
     estimate_rationale: str = ""
 
 
@@ -273,36 +281,31 @@ class AIMatchupSpotRequest(BaseModel):
     model_id: Optional[str] = None
 
 
-class RulesAuditIssue(BaseModel):
-    explanation: str = Field(
-        description="Errore concreto di regole, frase contestata e correzione"
-    )
-    oracle_quote: str = Field(
-        description="Breve citazione esatta del testo Oracle fornito che dimostra l'errore"
-    )
-
-
-class RulesAuditOutput(BaseModel):
-    issues: List[RulesAuditIssue] = Field(
-        default_factory=list,
-        description="Solo contraddizioni dimostrate; vuoto se non individuate",
-    )
-
-
-class GuideTextPatch(BaseModel):
+class GuideJSONPatch(BaseModel):
     path: str = Field(
-        description="JSON Pointer della stringa da correggere, es. /card_roles/0/explanation"
+        description="JSON Pointer esistente, es. /card_roles/0/explanation"
     )
-    original_text: str = Field(
-        description="Intero valore attuale della stringa, copiato esattamente dalla guida"
+    original_json: str = Field(
+        description="Valore originale JSON; per testi lunghi preferisci un frammento errato esatto e univoco, con virgolette JSON"
     )
-    replacement_text: str = Field(
-        min_length=1,
-        description="Intero testo corretto, coerente con Oracle e strategia",
+    replacement_json: str = Field(
+        description="Valore corretto serializzato come JSON, dello stesso tipo"
+    )
+    reason: str = Field(
+        description="Contraddizione letterale e correzione; non segnalare frasi che già esprimono il vincolo corretto"
+    )
+    source_quote: str = Field(
+        default="",
+        description="Breve estratto esatto dell’Oracle o regola fornita; vuoto solo per errori di copie o struttura",
     )
 
 
-class GuideRevisionOutput(BaseModel):
-    patches: List[GuideTextPatch] = Field(
-        description="Correzioni mirate di TUTTE le occorrenze degli errori segnalati; non cambiare lista, nomi o quantità"
+class GuideReviewOutput(BaseModel):
+    patches: List[GuideJSONPatch] = Field(
+        default_factory=list,
+        description="Una patch per percorso, correggere tutte le occorrenze nello stesso passaggio",
+    )
+    unresolved_issues: List[str] = Field(
+        default_factory=list,
+        description="Solo errori concreti non risolvibili con una patch; vuoto se nessuno",
     )

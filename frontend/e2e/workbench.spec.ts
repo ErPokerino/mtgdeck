@@ -8,6 +8,12 @@ import {
 } from "../src/components/playtest/playtestState";
 
 let fixture: any, fable: any, token: any;
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem("aetherdeck.onboarding.v1", "seen"),
+  );
+});
+
 test.beforeAll(async ({ request }) => {
   const result = await request.post("/api/decks/import", {
     data: {

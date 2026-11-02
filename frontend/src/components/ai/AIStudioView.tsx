@@ -19,6 +19,7 @@ import type {
   MetaArchetypeInfo,
 } from "../../types";
 import { ColorBadges } from "../common/ManaCost";
+import { GuideJobStatus } from "./GuideJobStatus";
 import { GuideReader } from "../library/GuideReader";
 import { CardInfoModal } from "../common/CardInfoModal";
 
@@ -104,6 +105,88 @@ export function AIStudioView({
     [guideError, setGuideError] = useState(""),
     [guideAttempted, setGuideAttempted] = useState(false);
   const guideRequest = useRef(0);
+  const jobListRequest = useRef(0);
+  const [guideJob, setGuideJob] = useState<any>(null);
+  const [legacyDrafts, setLegacyDrafts] = useState<any[]>([]);
+  const guideBusy =
+    guideLoading ||
+    ["queued", "running", "publishing"].includes(guideJob?.status);
+  useEffect(() => {
+    let stopped = false;
+    const request = ++jobListRequest.current;
+    api
+      .listGuideJobs(formatId)
+      .then((data) => {
+        if (stopped || request !== jobListRequest.current) return;
+        setLegacyDrafts(data.legacy_drafts || []);
+        const latestForDeck = data.jobs.find(
+          (j: any) => j.deck_id === (guideDeck === "custom" ? null : guideDeck),
+        );
+        const job =
+          data.jobs.find((j: any) =>
+            ["queued", "running", "publishing"].includes(j.status),
+          ) || (latestForDeck?.status !== "completed" ? latestForDeck : null);
+        if (job) {
+          if (["queued", "running", "publishing"].includes(job.status))
+            setGuideDeck(job.deck_id || "custom");
+          setGuideJob((old: any) => (old && old.id > job.id ? old : job));
+          ++guideRequest.current;
+          setGuide(null);
+          setGuideId(undefined);
+        } else
+          setGuideJob((old: any) =>
+            old && ["queued", "running", "publishing"].includes(old.status)
+              ? old
+              : null,
+          );
+      })
+      .catch((e) => {
+        if (!stopped)
+          setGuideError(`Stato analisi non disponibile: ${e.message}`);
+      });
+    return () => {
+      stopped = true;
+    };
+  }, [formatId, guideDeck]);
+  useEffect(() => {
+    if (
+      !guideJob ||
+      !["queued", "running", "publishing"].includes(guideJob.status)
+    )
+      return;
+    let stopped = false;
+    let polling = false;
+    const poll = async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const job = await api.getGuideJob(guideJob.id);
+        if (stopped) return;
+        setGuideJob(job);
+        setGuideError("");
+        if (
+          job.status === "completed" &&
+          job.deck_id === (guideDeck === "custom" ? null : guideDeck)
+        ) {
+          setGuide(job.result.guide);
+          setGuideId(job.result.meta.guide_id);
+        }
+      } catch (e: any) {
+        if (!stopped)
+          setGuideError(
+            `Connessione interrotta. L’analisi prosegue nel server; riprovo automaticamente. ${e.message}`,
+          );
+      } finally {
+        polling = false;
+      }
+    };
+    poll();
+    const timer = setInterval(poll, 1500);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [guideJob?.id, guideJob?.status, guideDeck]);
   const [deckA, setDeckA] = useState<number | "custom">(
       activeDeck?.id || "custom",
     ),
@@ -255,31 +338,52 @@ export function AIStudioView({
       setGenLoading(false);
     }
   };
-  const runGuide = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const request = ++guideRequest.current;
+  const startGuide = async (legacyRunId?: number) => {
+    ++jobListRequest.current;
+    ++guideRequest.current;
     setGuideLoading(true);
     setGuideError("");
     setGuideAttempted(true);
     setGuide(null);
     setGuideId(undefined);
     try {
-      const r = await api.generateDeckGuideAI({
-        format_id: formatId,
-        deck_id: guideDeck === "custom" ? undefined : guideDeck,
-        decklist_text: guideDeck === "custom" ? customGuide : undefined,
-        deck_name:
-          decks.find((d) => d.id === guideDeck)?.name || "Lista personalizzata",
-        model_id: modelId,
-      });
-      if (request === guideRequest.current) {
-        setGuide(r.guide);
-        setGuideId(r.meta?.guide_id);
-      }
+      setGuideJob(
+        await api.startGuideJob(
+          {
+            format_id: formatId,
+            deck_id: guideDeck === "custom" ? undefined : guideDeck,
+            decklist_text: guideDeck === "custom" ? customGuide : undefined,
+            deck_name:
+              decks.find((d) => d.id === guideDeck)?.name ||
+              "Lista personalizzata",
+            model_id: modelId,
+          },
+          legacyRunId,
+        ),
+      );
     } catch (e: any) {
-      if (request === guideRequest.current) setGuideError(e.message);
+      setGuideError(e.message);
     } finally {
-      if (request === guideRequest.current) setGuideLoading(false);
+      setGuideLoading(false);
+    }
+  };
+  const runGuide = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!guideBusy) void startGuide();
+  };
+  const resumeGuide = async () => {
+    ++jobListRequest.current;
+    if (!guideJob) return;
+    setGuideLoading(true);
+    setGuideError("");
+    setGuide(null);
+    setGuideId(undefined);
+    try {
+      setGuideJob(await api.resumeGuideJob(guideJob.id));
+    } catch (e: any) {
+      setGuideError(e.message);
+    } finally {
+      setGuideLoading(false);
     }
   };
   const runMatch = async (e: React.FormEvent) => {
@@ -713,7 +817,7 @@ export function AIStudioView({
               Guida al mazzo e piano di sideboard
             </h2>
             <fieldset
-              disabled={guideLoading}
+              disabled={guideBusy}
               className="space-y-4 disabled:opacity-60"
             >
               {deckSelect(guideDeck, setGuideDeck, "Lista da analizzare")}
@@ -728,38 +832,64 @@ export function AIStudioView({
               )}
             </fieldset>
             <p className="text-sm text-slate-400">
-              La guida viene verificata e corretta prima del salvataggio. Ogni
-              versione approvata si trova in Mazzi e guide, con lista esatta e
-              fonti. Il winrate ponderato usa le quote del metagame disponibile.
+              Tempo massimo per tentativo: 5 minuti. La bozza viene conservata e
+              puoi riprenderne la revisione. Ogni versione approvata si trova in
+              Mazzi e guide, con lista esatta e fonti. Il winrate ponderato usa
+              le quote del metagame disponibile.
             </p>
             {runButton(
-              guideLoading,
+              guideBusy,
               guide ? "Genera nuova versione" : "Genera e salva guida",
               guideDeck === "custom" && !customGuide.trim(),
             )}
           </form>
-          {guideLoading && (
-            <div role="status" className="panel flex items-start gap-3">
-              <Loader2 className="animate-spin shrink-0" size={20} />
-              <div>
-                <p className="font-semibold">Preparazione della nuova guida</p>
-                <p className="text-sm text-slate-300 mt-2">
-                  Generazione, controllo delle sidate, revisione Oracle e
-                  correzioni automatiche possono richiedere alcuni minuti. Qui
-                  apparirà solo la versione che supera i controlli.
-                </p>
-              </div>
-            </div>
+          {guideJob && (
+            <GuideJobStatus
+              job={guideJob}
+              onCancel={() =>
+                api
+                  .cancelGuideJob(guideJob.id)
+                  .then(setGuideJob)
+                  .catch((e) => setGuideError(e.message))
+              }
+              onResume={() => void resumeGuide()}
+            />
           )}
+          {!guideBusy &&
+            !guideJob &&
+            guideDeck !== "custom" &&
+            legacyDrafts.find((d) => d.deck_id === guideDeck) && (
+              <div className="panel space-y-3">
+                <p className="font-semibold">
+                  È disponibile la bozza del tentativo precedente
+                </p>
+                <p className="text-sm text-slate-300">
+                  Puoi recuperare il lavoro e riprendere solo la revisione,
+                  senza aspettare una nuova scrittura completa.
+                </p>
+                <button
+                  className="btn-primary"
+                  onClick={() =>
+                    void startGuide(
+                      legacyDrafts.find((d) => d.deck_id === guideDeck).run_id,
+                    )
+                  }
+                >
+                  Recupera e verifica la bozza
+                </button>
+              </div>
+            )}
           {guideError && (
             <div className="notice-error" role="alert">
               <p className="font-semibold">
-                {guideAttempted
-                  ? "Generazione non completata"
-                  : "Caricamento non riuscito"}
+                {guideBusy
+                  ? "Aggiornamento dello stato sospeso"
+                  : guideAttempted
+                    ? "Generazione non completata"
+                    : "Caricamento non riuscito"}
               </p>
               <p className="mt-2">{guideError}</p>
-              {guideAttempted && (
+              {guideAttempted && !guideBusy && (
                 <p className="mt-2 text-sm">
                   Nessuna nuova versione salvata. Le guide precedenti restano in
                   Mazzi e guide.

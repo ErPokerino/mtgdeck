@@ -64,6 +64,9 @@ class AIProvider(ABC):
         system_instruction: str,
         user_prompt: str,
         response_model: Type[T],
+        timeout_seconds: Optional[float] = None,
+        max_output_tokens: Optional[int] = None,
+        thinking_level: Optional[str] = None,
     ) -> T:
         client = self.get_client()
         resolved_model = self.resolve_provider_model_id(model_id)
@@ -78,6 +81,27 @@ class AIProvider(ABC):
                 "mime_type": "application/json",
                 "schema": clean_schema,
             },
+            **(
+                {"timeout": float(timeout_seconds)}
+                if timeout_seconds is not None
+                else {}
+            ),
+            **(
+                {
+                    "generation_config": {
+                        **(
+                            {"max_output_tokens": max_output_tokens}
+                            if max_output_tokens
+                            else {}
+                        ),
+                        **(
+                            {"thinking_level": thinking_level} if thinking_level else {}
+                        ),
+                    }
+                }
+                if max_output_tokens or thinking_level
+                else {}
+            ),
         )
         raw_text = interaction.output_text
         if not raw_text:
@@ -102,7 +126,9 @@ class GeminiDeveloperProvider(AIProvider):
             raise ValueError(
                 "Gemini API Key mancante. Inseriscila nelle Impostazioni (icona ingranaggio in alto a destra)."
             )
-        return genai.Client(api_key=self._api_key)
+        return genai.Client(
+            api_key=self._api_key, http_options={"retry_options": {"attempts": 0}}
+        )
 
 
 class VertexAIProvider(AIProvider):
@@ -123,6 +149,7 @@ class VertexAIProvider(AIProvider):
             )
         return genai.Client(
             vertexai=True,
+            http_options={"retry_options": {"attempts": 0}},
             project=self._project,
             location=self._location or "us-central1",
         )

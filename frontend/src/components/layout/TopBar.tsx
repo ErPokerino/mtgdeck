@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Archive,
+  CircleHelp,
   ChevronLeft,
   ChevronRight,
   Cpu,
@@ -39,6 +40,7 @@ interface TopBarProps {
   settings: AppSettings | null;
   onChangeComplexModel: (modelId: string) => void;
   onOpenSettings: () => void;
+  onOpenHelp: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -56,6 +58,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   settings,
   onChangeComplexModel,
   onOpenSettings,
+  onOpenHelp,
 }) => {
   const isSyncing = syncStatus?.scryfall_status === "running";
   const complexModels = (settings?.available_models || []).filter(
@@ -121,7 +124,10 @@ export const TopBar: React.FC<TopBarProps> = ({
         <div className="h-6 w-px bg-[#1E2638]" />
 
         {/* Format Selector (Requirement 1: Il formato si sceglie per primo e filtra tutto il resto) */}
-        <div className="flex items-center bg-[#080A0F] p-1 rounded-lg border border-[#1E2638]">
+        <div
+          data-tour="formats"
+          className="flex items-center bg-[#080A0F] p-1 rounded-lg border border-[#1E2638]"
+        >
           <span className="text-[10px] font-mono-tech uppercase tracking-wider text-slate-400 px-2">
             Formato:
           </span>
@@ -159,6 +165,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       {/* Center: Workspace Navigation */}
       <nav className="flex items-center gap-1 bg-[#080A0F] p-1 rounded-lg border border-[#1E2638]">
         <button
+          data-tour="deckbuilder"
           onClick={() => onSelectTab("deckbuilder")}
           className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
             activeTab === "deckbuilder"
@@ -183,6 +190,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
 
         <button
+          data-tour="meta"
           onClick={() => onSelectTab("meta")}
           className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
             activeTab === "meta"
@@ -195,6 +203,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
 
         <button
+          data-tour="ai_studio"
           onClick={() => onSelectTab("ai_studio")}
           className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
             activeTab === "ai_studio"
@@ -207,6 +216,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
 
         <button
+          data-tour="playtest"
           onClick={() => onSelectTab("playtest")}
           className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
             activeTab === "playtest"
@@ -218,6 +228,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           <span>Playtest</span>
         </button>
         <button
+          data-tour="library"
           onClick={() => onSelectTab("library")}
           aria-current={activeTab === "library" ? "page" : undefined}
           className={`btn-secondary ${activeTab === "library" ? "border-amber-400 text-amber-200" : ""}`}
@@ -229,6 +240,14 @@ export const TopBar: React.FC<TopBarProps> = ({
 
       {/* Right: Scryfall DB Status + AI Model Selector + Settings */}
       <div className="flex items-center gap-2.5">
+        <button
+          className="btn-secondary"
+          onClick={onOpenHelp}
+          aria-label="Aiuto e percorso iniziale"
+        >
+          <CircleHelp size={16} />
+          <span>Aiuto</span>
+        </button>
         {/* Sync Status Pill */}
         <div
           className="flex items-center gap-2 bg-[#10141F] border border-[#1E2638] px-2.5 py-1 rounded-lg text-xs"

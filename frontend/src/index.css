@@ -152,3 +152,6 @@ summary:focus-visible,
 }
 
 @media(max-width:767px) { .workspace-header > div:first-child button span.font-mono-tech {display:none;} }
+
+[data-tour-active="true"] { outline: 2px solid #f5d486; outline-offset: 5px; border-radius: 6px; scroll-margin: 140px; }
+@media (max-width: 600px) { .onboarding-coach { bottom: 8px; right: 8px; width: calc(100vw - 16px); max-height: 46vh; padding: 16px; } }

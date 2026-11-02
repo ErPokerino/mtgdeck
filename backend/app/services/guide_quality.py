@@ -1,7 +1,6 @@
 """Deterministic checks and transparent estimates; never fabricate empirical samples."""
 
 from collections import Counter
-from copy import deepcopy
 from datetime import datetime, timezone
 import re
 from app.models import MetaSnapshot, SyncLog
@@ -59,6 +58,23 @@ def validate_guide(guide, entries, include_rules=True):
                 "Esempio mulligan: la mano deve contenere 7 carte realmente disponibili nel mainboard."
             )
     for plan in guide.get("sideboard_guide", []):
+        for side in ("play", "draw"):
+            if (
+                (plan.get("cards_in") or plan.get("cards_out"))
+                and not plan.get(f"on_the_{side}_uses_base")
+                and not (
+                    plan.get(f"on_the_{side}_in") or plan.get(f"on_the_{side}_out")
+                )
+            ):
+                errors.append(
+                    f"{plan['opponent_archetype']}: manca la sidata {side}. Se identica al piano base usa on_the_{side}_uses_base=true, altrimenti fornisci gli array completi."
+                )
+            if plan.get(f"on_the_{side}_uses_base") and (
+                plan.get(f"on_the_{side}_in") or plan.get(f"on_the_{side}_out")
+            ):
+                errors.append(
+                    f"{plan['opponent_archetype']}: {side} usa il piano base ma contiene anche una sidata distinta. Scegli una rappresentazione univoca."
+                )
         for inf, outf in (
             ("cards_in", "cards_out"),
             ("on_the_play_in", "on_the_play_out"),
@@ -213,35 +229,6 @@ def validate_meta_coverage(guide, required_archetypes):
                 f"{plan['opponent_archetype']}: manca la motivazione della stima Bo3."
             )
     return errors
-
-
-def apply_guide_text_patches(guide, patches):
-    """Apply atomically to existing text only, with exact preconditions and no identity edits."""
-    result = deepcopy(guide)
-    if not patches:
-        raise ValueError("La revisione non contiene correzioni.")
-    protected = {"card_name", "opponent_archetype", "hand_cards", "cards_involved"}
-    for patch in patches:
-        path = patch.path
-        if not path.startswith("/"):
-            raise ValueError("Percorso di correzione non valido.")
-        parts = [p.replace("~1", "/").replace("~0", "~") for p in path[1:].split("/")]
-        if any(p in protected for p in parts):
-            raise ValueError(
-                "La correzione non può modificare l’identità delle carte o dei matchup."
-            )
-        node = result
-        try:
-            for part in parts[:-1]:
-                node = node[int(part)] if isinstance(node, list) else node[part]
-            last = int(parts[-1]) if isinstance(node, list) else parts[-1]
-            current = node[last]
-            if not isinstance(current, str) or current != patch.original_text:
-                raise ValueError("Il testo da correggere non corrisponde alla guida.")
-            node[last] = patch.replacement_text
-        except (KeyError, IndexError, TypeError) as exc:
-            raise ValueError("Percorso di correzione inesistente.") from exc
-    return result
 
 
 def evidence_context(db, fmt, snapshot=None):

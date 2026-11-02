@@ -39,13 +39,23 @@ Il catalogo viene aggiornato senza cancellare identità collegate ai mazzi. Le a
 
 Le skill motivano engine, densità, manabase, clock, interazioni Oracle, esclusioni, piani alternativi e slot post-side. Prezzo, rarità o tipo Lesson non sono filtri di legalità. Le probabilità di vedere almeno una copia in 7/9/10 carte sono calcolate con distribuzione ipergeometrica; non sono probabilità di poter lanciare la carta. Le liste invalide vengono riproposte all'AI o rifiutate, senza riempire automaticamente i buchi. Mani di esempio e sidate vengono verificate per copie disponibili e bilanciamento IN/OUT.
 
-Le guide passano un ciclo **bozza → controlli deterministici → revisione Oracle → correzioni → nuova verifica**, prima di qualsiasi salvataggio. Per gli errori testuali l’editor applica modifiche mirate con riscontro esatto del testo originale; gli errori strutturali richiedono una nuova versione completa. Sono richiesti tutti i matchup dello snapshot forniti nel prompt, senza duplicati e con motivazione della stima Bo3. Il numero massimo di revisioni è configurabile in `deck_guide.maxValidationRetries`. Solo la versione che supera i controlli viene archiviata, con data e numero di revisioni. Un tentativo fallito lascia intatte le guide precedenti e non le presenta come risultato nuovo. La revisione AI riduce gli errori, ma non è una certificazione formale delle regole.
+Le guide passano **bozza → controlli deterministici → revisione con correzioni → verifica dei passaggi modificati**, prima della pubblicazione. Il revisore restituisce direttamente patch con riscontro esatto e fonte, anche per errori strutturali: non viene rigenerato l’intero primer. Sono richiesti tutti i matchup forniti, senza duplicati e con stima Bo3 motivata. Se la sidata play/draw coincide con il piano base viene dichiarato esplicitamente, evitando tabelle duplicate; se differisce, gli array devono essere completi e bilanciati.
+
+Ogni tentativo ha un **budget di 5 minuti**, timeout per chiamata e nessun retry HTTP automatico. Massimo tre passaggi di revisione/verifica (riducibili con `deck_guide.maxValidationRetries`, mai oltre due correzioni). Il primer privilegia decisioni concrete e testo conciso; scrittura e controlli usano ragionamento medio con una revisione indipendente, evidenza Oracle e verifiche deterministiche. Solo la versione che supera i controlli viene archiviata, con data e numero di revisioni. La revisione AI riduce gli errori, ma non è una certificazione formale delle regole.
+
+La generazione avviene nel server come lavoro persistente (`guide_jobs`): AI Studio mostra fase reale, tempo trascorso e annullamento. Puoi cambiare sezione o ricaricare la pagina. Una bozza completa viene conservata prima della revisione; dopo un errore o riavvio puoi riprendere soltanto i controlli, senza riscriverla. Una firma della lista e del modello impedisce di pubblicare una guida su una lista modificata nel frattempo. L’annullamento impedisce la pubblicazione; una chiamata al provider già in corso può terminare prima dell’arresto del lavoro. I tentativi duplicati vengono riuniti; sono ammesse al massimo due analisi contemporanee.
+
+Le bozze rifiutate dal flusso precedente sono recuperabili se la lista è rimasta invariata, e non vengono proposte quando esiste una guida successiva già approvata. Le bozze non approvate restano separate da **Guide salvate**.
 
 **Winrate teorico ponderato**: `somma(quota archetipi × WR teorico Bo3) / somma(quote coperte)`. La guida mostra copertura, righe, fonte e data. I matchup mancanti restano ignoti; quote incoerenti impediscono il calcolo. Si tratta di stime AI, non risultati empirici, intervalli statistici o promesse di rendimento. Anche la matrice metagame è esplicitamente euristica, senza campioni inventati. Le guide storiche eventualmente già salvate vengono preservate; non è possibile ricostruire dati che non erano stati registrati.
 
 Ogni nuova guida include `meta_estimate`, anche quando il calcolo non è possibile: `status` e `reason` distinguono snapshot assente, quote incoerenti e matchup non corrispondenti. Il messaggio delle versioni storiche senza dati non viene usato per questi casi.
 
 Le fasi della generazione vengono registrate nei log del backend. Un tentativo fallito conserva una diagnostica e l’ultima bozza in `ai_runs`, separatamente dalle guide pubblicate, per poter analizzare gli errori senza ricreare il testo. Le eccezioni del provider vengono registrate solo per tipo, senza contenuti della richiesta o credenziali.
+
+## Percorso iniziale
+
+Al primo accesso viene proposto un percorso interattivo di sei tappe nelle sezioni reali: formato e catalogo, lista, meta, AI, playtest e archivio. Non crea dati né avvia analisi. Si può saltare, chiudere con Esc e riaprire da **Aiuto**. La preferenza è locale al browser (`aetherdeck.onboarding.v1`); il percorso mantiene la tappa quando apri le impostazioni e si adatta al telefono.
 
 ## Playtest
 

@@ -290,10 +290,10 @@ def test_guide_generation_stores_exact_snapshot_and_weighted_evidence(
         provider_name = "fake"
 
         def generate_structured(self, **kwargs):
-            from app.skills.schemas import RulesAuditOutput
+            from app.skills.schemas import GuideReviewOutput
 
-            if kwargs["response_model"] is RulesAuditOutput:
-                return RulesAuditOutput(issues=[])
+            if kwargs["response_model"] is GuideReviewOutput:
+                return GuideReviewOutput()
             return AIDeckGuideOutput(**guide_data)
 
     monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
@@ -472,11 +472,7 @@ def test_pdf_embeds_hand_and_card_images(guide_data):
 def test_oracle_audit_blocks_unresolved_contradictions(
     client, db, payload, guide_data, monkeypatch
 ):
-    from app.skills.schemas import (
-        RulesAuditOutput,
-        RulesAuditIssue,
-        GuideRevisionOutput,
-    )
+    from app.skills.schemas import GuideReviewOutput
 
     did = client.post("/api/decks", json=payload).json()["id"]
     previous_guide = {"executive_summary": "Versione precedente da conservare"}
@@ -487,15 +483,9 @@ def test_oracle_audit_blocks_unresolved_contradictions(
         provider_name = "fake"
 
         def generate_structured(self, **kwargs):
-            if kwargs["response_model"] is GuideRevisionOutput:
-                return GuideRevisionOutput(patches=[])
-            if kwargs["response_model"] is RulesAuditOutput:
-                return RulesAuditOutput(
-                    issues=[
-                        RulesAuditIssue(
-                            explanation="Contradiction", oracle_quote="Basic Land"
-                        )
-                    ]
+            if kwargs["response_model"] is GuideReviewOutput:
+                return GuideReviewOutput(
+                    unresolved_issues=["Revisione Oracle: Contradiction"]
                 )
             return AIDeckGuideOutput(**guide_data)
 
@@ -514,17 +504,13 @@ def test_oracle_audit_blocks_unresolved_contradictions(
     assert failure.output_json["draft"] is not None
 
 
-def test_guide_repairs_coverage_then_oracle_before_saving(
+def test_guide_repairs_coverage_and_oracle_in_one_pass_before_saving(
     client, db, payload, guide_data, monkeypatch
 ):
+    import json
     from copy import deepcopy
     from app.models import MetaSnapshot, MetaArchetype, AIRun
-    from app.skills.schemas import (
-        RulesAuditOutput,
-        RulesAuditIssue,
-        GuideRevisionOutput,
-        GuideTextPatch,
-    )
+    from app.skills.schemas import GuideReviewOutput, GuideJSONPatch
 
     did = client.post("/api/decks", json=payload).json()["id"]
     snapshot = MetaSnapshot(format_id="modern", source="fixture")
@@ -544,6 +530,22 @@ def test_guide_repairs_coverage_then_oracle_before_saving(
     draft = deepcopy(guide_data)
     draft["executive_summary"] = "Plains è un istantaneo."
     corrected = "Plains è una terra base."
+    plans = [
+        dict(
+            opponent_archetype=name,
+            tier=1,
+            expected_winrate_pct=wr,
+            matchup_difficulty="Equilibrato",
+            gameplan_pre_side="Pre",
+            gameplan_post_side="Post",
+            on_the_play_notes="Play",
+            on_the_draw_notes="Draw",
+            cards_in=[],
+            cards_out=[],
+            estimate_rationale="Clock e risposte da testare",
+        )
+        for name, wr in [("Aggro", 60), ("Control", 40)]
+    ]
     calls = []
 
     class Provider:
@@ -552,51 +554,33 @@ def test_guide_repairs_coverage_then_oracle_before_saving(
         def generate_structured(self, **kwargs):
             kind = kwargs["response_model"]
             calls.append(kind)
+            assert 0 < kwargs["timeout_seconds"] <= 180
             if kind is AIDeckGuideOutput:
-                result = deepcopy(draft)
-                if calls.count(AIDeckGuideOutput) > 1:
-                    assert "Manca il matchup obbligatorio" in kwargs["user_prompt"]
-                    for name, wr in [("Aggro", 60), ("Control", 40)]:
-                        result["sideboard_guide"].append(
-                            dict(
-                                opponent_archetype=name,
-                                tier=1,
-                                expected_winrate_pct=wr,
-                                matchup_difficulty="Equilibrato",
-                                gameplan_pre_side="Piano pre",
-                                gameplan_post_side="Piano post",
-                                on_the_play_notes="Play",
-                                on_the_draw_notes="Draw",
-                                cards_in=[],
-                                cards_out=[],
-                                estimate_rationale="Clock e risposte da verificare nei test",
-                            )
-                        )
-                return AIDeckGuideOutput(**result)
-            if kind is RulesAuditOutput:
-                assert (
-                    db.query(GuideVersion).count() == 0
-                )  # No draft has been published.
-                if corrected not in kwargs["user_prompt"]:
-                    return RulesAuditOutput(
-                        issues=[
-                            RulesAuditIssue(
-                                explanation="Plains non è un istantaneo",
-                                oracle_quote="Basic Land",
-                            )
-                        ]
-                    )
-                return RulesAuditOutput(issues=[])
-            assert kind is GuideRevisionOutput
-            return GuideRevisionOutput(
-                patches=[
-                    GuideTextPatch(
-                        path="/executive_summary",
-                        original_text=draft["executive_summary"],
-                        replacement_text=corrected,
-                    )
-                ]
-            )
+                return AIDeckGuideOutput(**draft)
+            assert kind is GuideReviewOutput
+            assert db.query(GuideVersion).count() == 0
+            if calls.count(GuideReviewOutput) == 1:
+                assert "Manca il matchup obbligatorio" in kwargs["user_prompt"]
+                return GuideReviewOutput(
+                    patches=[
+                        GuideJSONPatch(
+                            path="/executive_summary",
+                            original_json=json.dumps(draft["executive_summary"]),
+                            replacement_json=json.dumps(corrected),
+                            reason="Plains è una terra",
+                            source_quote="Basic Land",
+                        ),
+                        GuideJSONPatch(
+                            path="/sideboard_guide",
+                            original_json="[]",
+                            replacement_json=json.dumps(plans),
+                            reason="Matchup richiesti mancanti",
+                        ),
+                    ]
+                )
+            assert "VERIFICA SOLO QUESTE CORREZIONI" in kwargs["user_prompt"]
+            assert "GUIDA COMPLETA DA CONTROLLARE" not in kwargs["user_prompt"]
+            return GuideReviewOutput()
 
     monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
     result = runner.run_deck_guide_skill(
@@ -606,39 +590,38 @@ def test_guide_repairs_coverage_then_oracle_before_saving(
     assert guide["executive_summary"] == corrected
     assert guide["meta_estimate"]["weighted_winrate_pct"] == 52
     assert guide["meta_estimate"]["coverage_pct"] == 50
-    assert guide["meta_estimate"]["status"] == "available"
-    assert guide["quality_review"]["revision_count"] == 2
+    assert guide["quality_review"]["revision_count"] == 1
     assert db.query(GuideVersion).count() == 1
     assert db.get(Deck, did).guide_json == guide
-    assert db.query(AIRun).one().validation_attempts == 3
-    assert calls == [
-        AIDeckGuideOutput,
-        AIDeckGuideOutput,
-        RulesAuditOutput,
-        GuideRevisionOutput,
-        RulesAuditOutput,
-    ]
+    assert db.query(AIRun).one().validation_attempts == 2
+    assert calls == [AIDeckGuideOutput, GuideReviewOutput, GuideReviewOutput]
 
 
-def test_text_revision_is_atomic_and_cannot_change_cards(guide_data):
-    from app.services.guide_quality import apply_guide_text_patches
-    from app.skills.schemas import GuideTextPatch
+def test_targeted_fragment_revision_is_atomic_and_preserves_context(guide_data):
+    import json
+    from app.services.guide_pipeline import apply_review_patches
+    from app.skills.schemas import GuideJSONPatch
 
     original = guide_data["executive_summary"]
-    patch = GuideTextPatch(
-        path="/executive_summary", original_text=original, replacement_text="Correzione"
+    patch = GuideJSONPatch(
+        path="/executive_summary",
+        original_json=json.dumps("Tesi"),
+        replacement_json=json.dumps("Piano"),
+        reason="Correzione",
+        source_quote="Basic Land",
     )
-    wrong = GuideTextPatch(
-        path="/mulligan_examples/0/hand_cards/0",
-        original_text="Plains",
-        replacement_text="Island",
-    )
-    with pytest.raises(ValueError):
-        apply_guide_text_patches(guide_data, [patch, wrong])
+    candidate, changed = apply_review_patches(guide_data, [patch])
+    assert candidate.executive_summary == original.replace("Tesi", "Piano")
     assert guide_data["executive_summary"] == original
-    patch.original_text = "Testo non presente"
+    wrong = GuideJSONPatch(
+        path="/missing/0",
+        original_json='"a"',
+        replacement_json='"b"',
+        reason="Invalida",
+    )
     with pytest.raises(ValueError):
-        apply_guide_text_patches(guide_data, [patch])
+        apply_review_patches(guide_data, [patch, wrong])
+    assert guide_data["executive_summary"] == original
 
 
 def test_unavailable_estimate_explains_the_actual_cause():

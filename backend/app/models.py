@@ -283,6 +283,23 @@ class AIRun(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
+class GuideJob(Base):
+    __tablename__ = "guide_jobs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    format_id = Column(String(32), nullable=False, index=True)
+    deck_id = Column(Integer, nullable=True, index=True)
+    request_json = Column(JSON, nullable=False)
+    status = Column(String(32), default="queued", nullable=False)
+    phase = Column(String(64), default="queued", nullable=False)
+    draft_json = Column(JSON, nullable=True)
+    signature = Column(String(64), nullable=True)
+    error = Column(Text, nullable=True)
+    result_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 
