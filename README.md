@@ -43,7 +43,7 @@ Le skill motivano engine, densità, manabase, clock, interazioni Oracle, esclusi
 
 ## Playtest
 
-Il playtest è un sandbox solitario manuale, non un motore di regole né un avversario AI. La prima azione conferma automaticamente la mano; dopo un London mulligan devi prima selezionare il numero corretto di carte da mettere in fondo. Puoi giocare, tappare, spostare, pescare, fare scry/surveil, cambiare vite, segnalini, mescolare e annullare un'azione.
+Il playtest è un sandbox solitario manuale, non un motore di regole né un avversario AI. Il campo mostra due corsie distinte: creature e altri permanenti sopra, terre e fonti sotto; la mano rimane separata. Le corsie scorrono orizzontalmente quando contengono molte carte. La prima azione conferma automaticamente la mano; dopo un London mulligan devi prima selezionare il numero corretto di carte da mettere in fondo. Puoi giocare, tappare, spostare, pescare, fare scry/surveil, cambiare vite, segnalini, mescolare e annullare un'azione.
 
 Le carte sono ingrandibili e hanno azioni esplicite. “Azioni” apre immagine e testo leggibili, facce e pedine. Transform/MDFC si possono girare; split, avventure e Room non vengono erroneamente trattate come carte con retro. Fuori dal campo le carte tornano al fronte e perdono i segnalini. Le pedine ufficiali sono risolte su richiesta tramite le relazioni Scryfall; in assenza di connessione puoi creare una pedina personalizzata. Le pedine che lasciano il campo cessano di esistere. Le modifiche al playtest non cambiano la lista salvata. La configurazione post-side viene applicata solo avviando la nuova partita; puoi annullarla.
 
@@ -57,7 +57,7 @@ npm run build
 npx playwright install chromium
 ```
 
-I test browser usano un database separato con tre carte e snapshot offline. Da root:
+I test browser usano un database separato con quattro carte e snapshot offline. Da root:
 
 ```powershell
 .venv/Scripts/python.exe scripts/seed_qa.py

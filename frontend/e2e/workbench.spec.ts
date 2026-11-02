@@ -137,8 +137,8 @@ test("playtest: London mulligan cannot be bypassed by playing or drawing", async
   const hand = page.locator('[data-testid="playtest-card"][data-zone="hand"]');
   await expect(hand).toHaveCount(7);
   await expect(
-    hand.first().getByRole("button", { name: "Gioca", exact: true }),
-  ).toBeDisabled();
+    hand.first().getByRole("button", { name: /Seleziona per il fondo/ }),
+  ).toBeVisible();
   await hand
     .first()
     .getByRole("button", { name: /Seleziona per il fondo/ })
@@ -153,7 +153,7 @@ test("playtest: Fable transforms and returns to its front in hand", async ({
 }) => {
   await openPlaytest(page);
   const card = await getFable(page);
-  await card.getByRole("button", { name: "Gioca", exact: true }).click();
+  await card.getByRole("button", { name: /^Gioca / }).click();
   const permanent = page
     .locator('[data-card-name^="Fable"][data-zone="permanents"]')
     .first();
@@ -184,7 +184,7 @@ test("playtest: official and custom tokens, token removal, undo", async ({
   );
   await openPlaytest(page);
   const card = await getFable(page);
-  await card.getByRole("button", { name: "Gioca", exact: true }).click();
+  await card.getByRole("button", { name: /^Gioca / }).click();
   await page
     .locator('[data-card-name^="Fable"][data-zone="permanents"]')
     .first()
@@ -329,7 +329,7 @@ test("playtest accepts first play and drag without a separate keep click", async
   const hand = page.locator('[data-testid="playtest-card"][data-zone="hand"]');
   await hand
     .first()
-    .getByRole("button", { name: "Gioca", exact: true })
+    .getByRole("button", { name: /^Gioca / })
     .click();
   await expect(page.getByRole("heading", { name: "Mano (6)" })).toBeVisible();
   await expect(
@@ -409,4 +409,99 @@ test("clicking hand cards plays them, board cards tap, and the dots open info", 
   await expect(
     page.getByRole("dialog", { name: "Azioni carta" }),
   ).toBeVisible();
+});
+
+test("populated battlefield separates lands from threats and resolves dragged instant", async ({
+  page,
+  request,
+}) => {
+  const search = await request.get(
+    "/api/cards/search?format_id=modern&q=Bitter%20Triumph&page_size=4",
+  );
+  const instant = (await search.json()).cards.find(
+    (c: any) => c.name === "Bitter Triumph",
+  );
+  expect(instant).toBeTruthy();
+  const mountain = fixture.cards.find((c: any) => c.card_name === "Mountain");
+  const plains = fixture.cards.find((c: any) => c.card_name === "Plains");
+  const fableEntry = fixture.cards.find((c: any) =>
+    c.card_name.startsWith("Fable"),
+  );
+  const staged = {
+    ...fixture,
+    cards: [
+      { ...mountain, board: "main", quantity: 3 },
+      { ...fableEntry, board: "main", quantity: 2 },
+      {
+        oracle_id: instant.oracle_id,
+        card_name: instant.name,
+        board: "main",
+        quantity: 1,
+        card: instant,
+      },
+      { ...plains, board: "main", quantity: 54 },
+    ],
+  };
+  await page.addInitScript(() => {
+    Math.random = () => 0.999999;
+  });
+  await page.route(`**/api/decks/${fixture.id}`, (route) =>
+    route.fulfill({ json: staged }),
+  );
+  await openPlaytest(page);
+  for (let i = 0; i < 3; i++)
+    await page
+      .locator('[data-zone="hand"][data-card-name="Mountain"]')
+      .first()
+      .getByRole("button", { name: "Gioca Mountain" })
+      .click();
+  for (let i = 0; i < 2; i++)
+    await page
+      .locator('[data-zone="hand"][data-card-name^="Fable"]')
+      .first()
+      .getByRole("button", { name: /^Gioca Fable/ })
+      .click();
+  await expect(
+    page.getByTestId("lane-lands").locator('[data-zone="lands"]'),
+  ).toHaveCount(3);
+  await expect(
+    page.getByTestId("lane-permanents").locator('[data-zone="permanents"]'),
+  ).toHaveCount(2);
+  const handInstant = page.locator(
+    '[data-zone="hand"][data-card-name="Bitter Triumph"]',
+  );
+  await handInstant.dragTo(page.getByTestId("lane-permanents"));
+  await expect(
+    page.getByRole("button", { name: "Cimitero (1)" }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByTestId("lane-permanents")
+      .locator('[data-card-name="Bitter Triumph"]'),
+  ).toHaveCount(0);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: "../tmp/qa/playtest-populated.png",
+    fullPage: true,
+  });
+  const lanes = await page.evaluate(() => {
+    const threats = document
+      .querySelector('[data-testid="lane-permanents"]')!
+      .getBoundingClientRect();
+    const lands = document
+      .querySelector('[data-testid="lane-lands"]')!
+      .getBoundingClientRect();
+    const hand = document
+      .querySelector('[aria-label="Mano"]')!
+      .getBoundingClientRect();
+    return {
+      threatsTop: threats.top,
+      threatsBottom: threats.bottom,
+      landsTop: lands.top,
+      landsBottom: lands.bottom,
+      handTop: hand.top,
+    };
+  });
+  expect(lanes.threatsBottom).toBeLessThanOrEqual(lanes.landsTop);
+  expect(lanes.landsBottom).toBeLessThanOrEqual(lanes.handTop);
 });

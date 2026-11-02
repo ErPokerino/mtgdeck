@@ -70,7 +70,7 @@ export function PlaytestView({
   const [selected, setSelected] = useState<string | null>(null),
     [bottom, setBottom] = useState<string[]>([]),
     [error, setError] = useState("");
-  const [zoom, setZoom] = useState(132),
+  const [zoom, setZoom] = useState(88),
     [rightZone, setRightZone] = useState<Zone | "log">("graveyard"),
     [search, setSearch] = useState("");
   const [peek, setPeek] = useState(false),
@@ -240,7 +240,15 @@ export function PlaytestView({
     const uid =
       event.dataTransfer.getData("text/mtg-uid") ||
       event.dataTransfer.getData("text/plain");
-    if (uid) move(uid, zone);
+    if (!uid) return;
+    const card = game.cards.find((c) => c.uid === uid);
+    if (card?.zone === "hand" && battlefield(zone)) {
+      // Playing from hand follows the same routing as clicking: lands to the
+      // land lane, permanents to the board, instants and sorceries to graveyard.
+      play(uid);
+    } else {
+      move(uid, zone);
+    }
   };
   const cardTile = (inst: Instance) => {
     const face = faceCard(inst.card, inst.face),
@@ -316,24 +324,15 @@ export function PlaytestView({
             </span>
           )}
         </button>
-        <p
-          className="text-[11px] text-slate-200 truncate my-1"
-          title={face.name}
-        >
-          {face.name}
-        </p>
-        <div className="flex gap-1">
-          <button
-            className="btn-secondary text-xs! px-2! py-1.5! flex-1"
-            disabled={openingBlocked}
-            onClick={() =>
-              battlefield(inst.zone) ? tap(inst.uid) : play(inst.uid)
-            }
+        <div className="flex items-center gap-1 pt-1">
+          <p
+            className="text-[11px] text-slate-200 truncate flex-1"
+            title={face.name}
           >
-            {battlefield(inst.zone) ? (inst.tapped ? "STAP" : "TAP") : "Gioca"}
-          </button>
+            {face.name}
+          </p>
           <button
-            className="btn-secondary text-xs! px-2! py-1.5!"
+            className="shrink-0 min-w-7 min-h-7 rounded-md bg-[#1b2a3d] border border-slate-600 text-slate-100 hover:bg-[#30445c]"
             aria-label={`Azioni ${face.name}`}
             onClick={() => {
               setSelected(inst.uid);
@@ -346,55 +345,100 @@ export function PlaytestView({
       </div>
     );
   };
-  const zone = (id: Zone, help: string) => (
-    <section
-      className="rounded-xl border border-slate-700 bg-[#0c1420] p-4"
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => dropped(e, id)}
-      aria-label={zones[id]}
-    >
-      <div className="flex justify-between gap-2 mb-4">
-        <h2 className="font-semibold text-sm text-slate-100">
-          {id === "permanents" ? "Campo di battaglia" : zones[id]}{" "}
-          <span className="text-slate-500">
-            (
-            {id === "permanents"
-              ? counts.permanents + counts.lands
-              : counts[id]}
-            )
-          </span>
-        </h2>
-        <span className="text-xs text-slate-400">{help}</span>
-      </div>
-      <div className="flex flex-wrap gap-3 min-h-24">
-        {game.cards
-          .filter(
-            (c) => c.zone === id || (id === "permanents" && c.zone === "lands"),
-          )
-          .map(cardTile)}
-        {!(id === "permanents"
-          ? counts.permanents + counts.lands
-          : counts[id]) && (
-          <p className="self-center text-sm text-slate-500">
-            Trascina qui una carta o usa “Azioni”.
-          </p>
-        )}
-      </div>
-    </section>
-  );
+  const zone = (id: "permanents" | "hand", help: string) => {
+    const lanes: { id: Zone; label: string; description: string }[] =
+      id === "permanents"
+        ? [
+            {
+              id: "permanents",
+              label: "Creature e altri permanenti",
+              description: "Minacce, artefatti, incantesimi e pedine",
+            },
+            {
+              id: "lands",
+              label: "Terre e fonti",
+              description: "Mana disponibile e terre tappate",
+            },
+          ]
+        : [{ id: "hand", label: "", description: "" }];
+    return (
+      <section
+        className="rounded-xl border border-slate-700 bg-[#0c1420] p-3 md:p-4"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => dropped(e, id)}
+        aria-label={zones[id]}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 className="font-semibold text-sm text-slate-100">
+            {id === "permanents" ? "Campo di battaglia" : zones[id]}{" "}
+            <span className="text-slate-400">
+              (
+              {id === "permanents"
+                ? counts.permanents + counts.lands
+                : counts[id]}
+              )
+            </span>
+          </h2>
+          <span className="text-xs text-slate-400">{help}</span>
+        </div>
+        <div className="space-y-2">
+          {lanes.map((lane) => (
+            <div
+              key={lane.id}
+              data-testid={`lane-${lane.id}`}
+              className={
+                id === "permanents"
+                  ? "rounded-lg border border-slate-700/70 bg-[#101b2a] px-3 py-2"
+                  : ""
+              }
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.stopPropagation();
+                dropped(e, lane.id);
+              }}
+            >
+              {lane.label && (
+                <div className="flex flex-wrap items-baseline gap-2 mb-2">
+                  <h3 className="text-xs font-bold text-slate-100">
+                    {lane.label}{" "}
+                    <span className="text-slate-400">({counts[lane.id]})</span>
+                  </h3>
+                  <span className="text-xs text-slate-400">
+                    {lane.description}
+                  </span>
+                </div>
+              )}
+              <div
+                className="flex gap-2 overflow-x-auto pb-2 min-h-16 items-start"
+                aria-label={lane.label || "Carte in mano"}
+              >
+                {game.cards.filter((c) => c.zone === lane.id).map(cardTile)}
+                {!counts[lane.id] && (
+                  <p className="self-center py-2 text-xs text-slate-400">
+                    {lane.id === "hand"
+                      ? "Nessuna carta in mano."
+                      : "Trascina qui una carta o giocala dalla mano."}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  };
   const chosenFace = chosen ? faceCard(chosen.card, chosen.face) : null;
   return (
-    <div className="max-w-[1900px] mx-auto p-3 md:p-5 space-y-4">
-      <div className="flex flex-wrap justify-between items-start gap-4">
+    <div className="max-w-[1900px] mx-auto p-3 md:px-5 md:py-3 space-y-3">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
-          <p className="eyebrow">Allenamento solitario · {formatId}</p>
-          <h1 className="text-2xl font-bold mt-1 flex gap-2 items-center">
+          <h1 className="text-lg font-bold flex gap-2 items-center">
             <Dices className="text-emerald-300" />
             Playtest
           </h1>
-          <p className="text-xs text-slate-400 mt-2">
-            Costi, trigger e abilità sono manuali. Le azioni qui non modificano
-            il mazzo salvato.
+          <p className="text-xs text-slate-400">
+            {formatId.toUpperCase()} · Playtest manuale, senza modificare il
+            mazzo
           </p>
         </div>
         <label className="text-sm text-slate-300">
@@ -446,7 +490,7 @@ export function PlaytestView({
               questo ambiente manuale.
             </p>
           )}
-          <div className="panel p-3! flex flex-wrap items-center gap-2">
+          <div className="panel p-2! flex items-center gap-2 overflow-x-auto [&>button]:shrink-0 [&>div]:shrink-0">
             {(["life", "opponent"] as const).map((l) => (
               <div
                 className="flex items-center gap-2 rounded-lg bg-black/25 px-3 py-1"
@@ -555,12 +599,12 @@ export function PlaytestView({
               <Undo2 size={15} />
               Annulla
             </button>
-            <label className="ml-auto flex items-center gap-2 text-xs text-slate-400">
+            <label className="ml-auto flex shrink-0 items-center gap-2 text-xs text-slate-400">
               Carte{" "}
               <input
                 aria-label="Dimensione carte"
                 type="range"
-                min={96}
+                min={80}
                 max={184}
                 step={8}
                 value={zoom}
