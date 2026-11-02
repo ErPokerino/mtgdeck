@@ -16,10 +16,12 @@ from reportlab.platypus import (
     TableStyle,
     PageBreak,
     KeepTogether,
+    Image,
 )
 
 
-def render_guide_pdf(guide, name, fmt, decklist):
+def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
+    card_images = card_images or {}
     buffer = BytesIO()
     styles = getSampleStyleSheet()
     styles.add(
@@ -92,6 +94,11 @@ def render_guide_pdf(guide, name, fmt, decklist):
         )
         story.append(KeepTogether([t]) if together else t)
 
+    if guide.get("rules_warnings"):
+        section(
+            "Attenzione - possibili errori di regole",
+            "\n".join(guide["rules_warnings"]),
+        )
     section("Tesi competitiva", guide.get("executive_summary"))
     section(
         f"Valutazione globale: {guide.get('pro_score', '-')}/10",
@@ -138,7 +145,7 @@ def render_guide_pdf(guide, name, fmt, decklist):
     toc = TableOfContents()
     toc.levelStyles = [
         ParagraphStyle(
-            name="Contents", fontSize=10, leading=15, leftIndent=10, spaceBefore=5
+            name="Contents", fontSize=9, leading=12, leftIndent=10, spaceBefore=1
         )
     ]
     story.extend([toc, PageBreak()])
@@ -164,16 +171,71 @@ def render_guide_pdf(guide, name, fmt, decklist):
         ("Mulligan", "mulligan_heuristics"),
     ]:
         section(title, guide.get(field))
-    for ex in guide.get("mulligan_examples", []):
+    for ex_index, ex in enumerate(guide.get("mulligan_examples", [])):
+        story.append(p(f"{ex.get('verdict')} - {ex.get('context')}", "Heading2"))
+        hand = ex.get("hand_cards", [])
+        pictures = []
+        for card_name in hand:
+            raw = card_images.get(card_name.casefold().split(" // ")[0])
+            pictures.append(
+                Image(BytesIO(raw), width=22 * mm, height=30.7 * mm)
+                if raw
+                else p(card_name, "SmallPro")
+            )
+        if (
+            ex_index == 0
+            and pictures
+            and all(card_images.get(n.casefold().split(" // ")[0]) for n in hand)
+        ):
+            story.append(
+                Table(
+                    [pictures],
+                    colWidths=[24 * mm] * len(pictures),
+                    hAlign="LEFT",
+                    style=[
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 1),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 1),
+                    ],
+                )
+            )
         story.extend(
             [
-                p(f"{ex.get('verdict')} - {ex.get('context')}", "Heading2"),
                 p(", ".join(ex.get("hand_cards", []))),
                 p(ex.get("analysis")),
             ]
         )
     story.append(p("Scelte carta per carta", "Heading1"))
-    for card in guide.get("card_roles", []):
+    for index, card in enumerate(guide.get("card_roles", [])):
+        raw = (
+            card_images.get(str(card.get("card_name", "")).casefold().split(" // ")[0])
+            if index < 3
+            else None
+        )
+        if raw:
+            story.append(
+                KeepTogether(
+                    [
+                        Table(
+                            [
+                                [
+                                    Image(
+                                        BytesIO(raw), width=35 * mm, height=48.9 * mm
+                                    ),
+                                    p(
+                                        f"{card.get('quantity')}x {card.get('card_name')} / {card.get('role_category')}",
+                                        "Heading2",
+                                    ),
+                                ]
+                            ],
+                            colWidths=[39 * mm, 131 * mm],
+                            style=[("VALIGN", (0, 0), (-1, -1), "TOP")],
+                        ),
+                        p(card.get("explanation")),
+                    ]
+                )
+            )
+            continue
         story.extend(
             [
                 p(
@@ -265,7 +327,16 @@ def render_guide_pdf(guide, name, fmt, decklist):
                 anchor = f"section-{self._heading_count}"
                 self.canv.bookmarkPage(anchor)
                 self.canv.addOutlineEntry(title, anchor, level=0)
-                self.notify("TOCEntry", (0, escape(title), self.page, anchor))
+                chapters = {
+                    "Lista di riferimento",
+                    "Posizionamento",
+                    "Mulligan",
+                    "Scelte carta per carta",
+                    "Sinergie e linee",
+                    "Tips e micro-interazioni",
+                }
+                if title in chapters or title.startswith("Matchup / "):
+                    self.notify("TOCEntry", (0, escape(title), self.page, anchor))
 
     doc = PrimerDoc(
         buffer,

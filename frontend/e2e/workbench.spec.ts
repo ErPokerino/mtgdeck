@@ -141,7 +141,7 @@ test("playtest: London mulligan cannot be bypassed by playing or drawing", async
   ).toBeDisabled();
   await hand
     .first()
-    .getByRole("button", { name: /Esamina/ })
+    .getByRole("button", { name: /Seleziona per il fondo/ })
     .click();
   await page.getByRole("button", { name: "Tieni mano (6)" }).click();
   await expect(hand).toHaveCount(6);
@@ -386,4 +386,27 @@ test("main sections navigate without client errors", async ({ page }) => {
     page.getByRole("heading", { name: "Mazzi e guide", exact: true }),
   ).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("clicking hand cards plays them, board cards tap, and the dots open info", async ({
+  page,
+}) => {
+  await openPlaytest(page);
+  const hand = page.locator('[data-testid="playtest-card"][data-zone="hand"]');
+  await hand
+    .first()
+    .getByRole("button", { name: /^Gioca / })
+    .click();
+  await expect(hand).toHaveCount(6);
+  const board = page
+    .locator(
+      '[data-testid="playtest-card"][data-zone="lands"], [data-testid="playtest-card"][data-zone="permanents"]',
+    )
+    .first();
+  await board.getByRole("button", { name: /^Tappa / }).click();
+  await expect(board.getByText("TAP", { exact: true })).toBeVisible();
+  await board.getByRole("button", { name: /^Azioni / }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Azioni carta" }),
+  ).toBeVisible();
 });

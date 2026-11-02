@@ -290,6 +290,10 @@ def test_guide_generation_stores_exact_snapshot_and_weighted_evidence(
         provider_name = "fake"
 
         def generate_structured(self, **kwargs):
+            from app.skills.schemas import RulesAuditOutput
+
+            if kwargs["response_model"] is RulesAuditOutput:
+                return RulesAuditOutput(issues=[])
             return AIDeckGuideOutput(**guide_data)
 
     monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
@@ -323,7 +327,9 @@ def test_unchanged_save_keeps_current_guide(client, db, payload, guide_data):
     deck.guide_json = guide_data
     db.commit()
     result = client.put(f"/api/decks/{did}", json=payload)
-    assert result.json()["guide_json"] == guide_data
+    assert {
+        k: v for k, v in result.json()["guide_json"].items() if k != "rules_warnings"
+    } == guide_data
 
 
 def test_arena_companion_roundtrip_is_not_double_counted(db):
@@ -371,3 +377,122 @@ def test_sync_upsert_preserves_foreign_keys_and_invalidates_absent_cards(
     assert db.get(Card, "Island").legality_modern == "not_legal"
     assert db.execute(text("PRAGMA foreign_keys")).scalar() == 1
     assert db.execute(text("PRAGMA foreign_key_check")).all() == []
+
+
+def test_reflection_cannot_copy_legendary_but_may_copy_nonlegendary(db):
+    from app.services.guide_quality import validate_guide
+
+    fable = Card(
+        oracle_id="fable",
+        name="Fable of the Mirror-Breaker // Reflection of Kiki-Jiki",
+        type_line="Enchantment // Creature",
+        scryfall_id="f",
+        set_code="tst",
+    )
+    sheoldred = Card(
+        oracle_id="sheoldred",
+        name="Sheoldred, the Apocalypse",
+        type_line="Legendary Creature - Phyrexian Praetor",
+        scryfall_id="s",
+        set_code="tst",
+    )
+    entries = [(fable, "main", 4), (sheoldred, "main", 4)]
+    guide = {
+        "card_roles": [
+            {
+                "card_name": fable.name,
+                "quantity": 4,
+                "explanation": "Una volta trasformata, copiare Sheoldred o Kroxa chiude la partita.",
+            }
+        ]
+    }
+    assert any("non può bersagliare" in e for e in validate_guide(guide, entries))
+    guide["card_roles"][0]["explanation"] = (
+        "Non può copiare Sheoldred, che è leggendaria."
+    )
+    assert not validate_guide(guide, entries)
+
+
+def test_reflection_guard_does_not_confuse_context_with_copy_target():
+    from app.services.guide_quality import reflection_copy_errors
+
+    fable = Card(
+        oracle_id="fable",
+        name="Fable of the Mirror-Breaker // Reflection of Kiki-Jiki",
+        type_line="Enchantment // Creature",
+        scryfall_id="f",
+        set_code="tst",
+    )
+    kroxa = Card(
+        oracle_id="k",
+        name="Kroxa, Titan of Death's Hunger",
+        type_line="Legendary Creature - Elder Giant",
+        scryfall_id="k",
+        set_code="tst",
+    )
+    entries = [(fable, "main", 4), (kroxa, "main", 4)]
+    guide = {
+        "card_roles": [
+            {
+                "card_name": fable.name,
+                "explanation": "Filtre pour Kroxa, puis peut copier Harvester.",
+            }
+        ]
+    }
+    assert not reflection_copy_errors(guide, entries)
+
+
+def test_pdf_embeds_hand_and_card_images(guide_data):
+    from io import BytesIO
+    from PIL import Image
+    from pypdf import PdfReader
+
+    buf = BytesIO()
+    Image.new("RGB", (63, 88), "red").save(buf, format="PNG")
+    img = buf.getvalue()
+    guide_data["card_roles"] = [
+        {
+            "card_name": "Plains",
+            "quantity": 60,
+            "role_category": "Manabase",
+            "explanation": "Source de mana.",
+        }
+    ]
+    pdf = render_guide_pdf(
+        guide_data,
+        "Guida con immagini",
+        "modern",
+        [{"quantity": 60, "board": "main", "card_name": "Plains"}],
+        {"plains": img},
+    )
+    reader = PdfReader(BytesIO(pdf))
+    assert any(page.get("/Resources", {}).get("/XObject") for page in reader.pages)
+
+
+def test_oracle_audit_blocks_unresolved_contradictions(
+    client, db, payload, guide_data, monkeypatch
+):
+    from app.skills.schemas import RulesAuditOutput, RulesAuditIssue
+
+    did = client.post("/api/decks", json=payload).json()["id"]
+
+    class Provider:
+        provider_name = "fake"
+
+        def generate_structured(self, **kwargs):
+            if kwargs["response_model"] is RulesAuditOutput:
+                return RulesAuditOutput(
+                    issues=[
+                        RulesAuditIssue(
+                            explanation="Contradiction", oracle_quote="Basic Land"
+                        )
+                    ]
+                )
+            return AIDeckGuideOutput(**guide_data)
+
+    monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
+    with pytest.raises(ValueError, match="Revisione Oracle"):
+        runner.run_deck_guide_skill(
+            db, AIDeckGuideRequest(deck_id=did, format_id="modern")
+        )
+    assert db.query(GuideVersion).count() == 0

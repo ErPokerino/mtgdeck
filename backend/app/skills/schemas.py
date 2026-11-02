@@ -271,3 +271,19 @@ class AIMatchupSpotRequest(BaseModel):
     deck_b_name: str = "Mazzo B (Avversario)"
     deck_b_text: Optional[str] = None
     model_id: Optional[str] = None
+
+
+class RulesAuditIssue(BaseModel):
+    explanation: str = Field(
+        description="Errore concreto di regole, frase contestata e correzione"
+    )
+    oracle_quote: str = Field(
+        description="Breve citazione esatta del testo Oracle fornito che dimostra l'errore"
+    )
+
+
+class RulesAuditOutput(BaseModel):
+    issues: List[RulesAuditIssue] = Field(
+        default_factory=list,
+        description="Solo contraddizioni dimostrate; vuoto se non individuate",
+    )

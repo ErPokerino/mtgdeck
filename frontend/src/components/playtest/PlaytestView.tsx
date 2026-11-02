@@ -263,7 +263,7 @@ export function PlaytestView({
       >
         <button
           className="relative block w-full aspect-[63/88] rounded-lg overflow-hidden bg-[#172435] cursor-pointer"
-          aria-label={`Esamina ${face.name}`}
+          aria-label={`${battlefield(inst.zone) ? (inst.tapped ? "Stappa" : "Tappa") : game.opening && game.mulligans ? "Seleziona per il fondo" : "Gioca"} ${face.name}`}
           onClick={() => {
             if (game.opening && inst.zone === "hand" && game.mulligans) {
               setBottom((b) =>
@@ -273,9 +273,10 @@ export function PlaytestView({
                     ? [...b, inst.uid]
                     : b,
               );
+            } else if (battlefield(inst.zone)) {
+              tap(inst.uid);
             } else {
-              setSelected(inst.uid);
-              setModal(true);
+              play(inst.uid);
             }
           }}
         >
@@ -354,13 +355,26 @@ export function PlaytestView({
     >
       <div className="flex justify-between gap-2 mb-4">
         <h2 className="font-semibold text-sm text-slate-100">
-          {zones[id]} <span className="text-slate-500">({counts[id]})</span>
+          {id === "permanents" ? "Campo di battaglia" : zones[id]}{" "}
+          <span className="text-slate-500">
+            (
+            {id === "permanents"
+              ? counts.permanents + counts.lands
+              : counts[id]}
+            )
+          </span>
         </h2>
         <span className="text-xs text-slate-400">{help}</span>
       </div>
       <div className="flex flex-wrap gap-3 min-h-24">
-        {game.cards.filter((c) => c.zone === id).map(cardTile)}
-        {!counts[id] && (
+        {game.cards
+          .filter(
+            (c) => c.zone === id || (id === "permanents" && c.zone === "lands"),
+          )
+          .map(cardTile)}
+        {!(id === "permanents"
+          ? counts.permanents + counts.lands
+          : counts[id]) && (
           <p className="self-center text-sm text-slate-500">
             Trascina qui una carta o usa “Azioni”.
           </p>
@@ -593,14 +607,13 @@ export function PlaytestView({
             <div className="space-y-4 min-w-0">
               {zone(
                 "permanents",
-                "Clicca Azioni per facce, pedine e segnalini",
+                "Clicca una carta per TAP/STAP; usa ••• per le azioni",
               )}
-              {zone("lands", "TAP e STAP con il pulsante sotto la carta")}
               {zone(
                 "hand",
                 game.opening && game.mulligans
                   ? "Clicca le immagini per scegliere il fondo"
-                  : "Gioca con il pulsante sotto la carta",
+                  : "Clicca la carta per giocarla; usa ••• per informazioni",
               )}
             </div>
             <aside className="panel p-3! space-y-4 xl:sticky xl:top-24 min-w-0">

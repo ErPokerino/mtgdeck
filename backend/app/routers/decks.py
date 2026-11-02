@@ -109,6 +109,11 @@ def _build_deck_detail(db: Session, deck: Deck) -> DeckDetailOut:
     validation = validate_deck_entries(deck.format_id, resolved_tuples)
     analytics = compute_deck_analytics(resolved_tuples)
 
+    guide = dict(deck.guide_json) if deck.guide_json else None
+    if guide:
+        from app.services.guide_quality import reflection_copy_errors
+
+        guide["rules_warnings"] = reflection_copy_errors(guide, resolved_tuples)
     return DeckDetailOut(
         id=deck.id,
         name=deck.name,
@@ -118,7 +123,7 @@ def _build_deck_detail(db: Session, deck: Deck) -> DeckDetailOut:
         color_label=deck.color_label,
         description=deck.description,
         source=deck.source,
-        guide_json=deck.guide_json,
+        guide_json=guide,
         created_at=deck.created_at,
         updated_at=deck.updated_at,
         cards=cards_out,

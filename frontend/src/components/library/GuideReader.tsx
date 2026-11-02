@@ -34,6 +34,17 @@ export function GuideReader({
     );
   return (
     <article className="space-y-5 guide-reader">
+      {guide.rules_warnings?.length > 0 && (
+        <div role="alert" className="notice-error">
+          <strong>
+            Attenzione: possibile errore di regole in questa guida.
+          </strong>
+          <p>Questa versione archiviata richiede revisione prima dell’uso.</p>
+          {guide.rules_warnings.map((w: string, i: number) => (
+            <p key={i}>{w}</p>
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
           <p className="eyebrow">

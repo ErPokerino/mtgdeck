@@ -62,7 +62,62 @@ def validate_guide(guide, entries):
                 f"{plan['opponent_archetype']}: {e}"
                 for e in validate_swaps(plan, entries, inf, outf)
             )
+    errors.extend(reflection_copy_errors(guide, entries))
     return errors
+
+
+def reflection_copy_errors(guide, entries):
+    """Flag a specific, high-impact Oracle contradiction in new and archived guides."""
+    if not any("reflection of kiki-jiki" in c.name.casefold() for c, _, _ in entries):
+        return []
+    legends = []
+    for card, _, _ in entries:
+        if (
+            "legendary" in (card.type_line or "").casefold()
+            and "creature" in (card.type_line or "").casefold()
+        ):
+            front = card.name.split(" // ")[0]
+            legends.append((front, front.split(",")[0].strip().casefold()))
+    errors = []
+    sections = [
+        (str(role.get("card_name", "")), role.get("explanation", ""))
+        for role in guide.get("card_roles", [])
+    ]
+    sections += [
+        (" ".join(syn.get("cards_involved", [])), syn.get("description", ""))
+        for syn in guide.get("synergies", [])
+    ]
+    sections += [
+        ("", str(guide.get(field, "")))
+        for field in (
+            "executive_summary",
+            "early_game_plan",
+            "mid_game_plan",
+            "late_game_plan",
+        )
+    ]
+    for context, text in sections:
+        for sentence in re.split(r"[.;\n]", str(text)):
+            lower = sentence.casefold()
+            verb = re.search(r"copi(?:a|e|i|o|are|ando)|duplic(?:a|are|azione)", lower)
+            if not verb:
+                continue
+            if re.search(
+                r"(?:non|cannot|can't|impossibile|evita)\s+(?:pu[oò]\s+|di\s+)?(?:essere\s+)?(?:copi|duplic)",
+                lower,
+            ):
+                continue
+            if not any(
+                k in (context + " " + sentence).casefold()
+                for k in ("reflection", "kiki-jiki", "fable")
+            ):
+                continue
+            for full, short in legends:
+                if len(short) >= 4 and short in lower[verb.end() :]:
+                    errors.append(
+                        f"Reflection of Kiki-Jiki non può bersagliare {full}: è una creatura leggendaria. Rivedi: {sentence.strip()}"
+                    )
+    return list(dict.fromkeys(errors))
 
 
 def weighted_meta_estimate(guide, archetypes, snapshot=None):
@@ -139,9 +194,7 @@ def evidence_context(db, fmt, snapshot=None):
         f"Ultima sync legalità Scryfall: {sync.completed_at.isoformat() if sync and sync.completed_at else 'non documentata'}. "
         f"Snapshot meta: {snapshot.id if snapshot else 'assente'}; fonte: {snapshot.source if snapshot else 'assente'}; "
         f"rilevazione: {snapshot.fetched_at.isoformat() if snapshot else 'non disponibile'}. "
-        "Le legalità sono una fotografia locale, non una verifica live. Distingui fatti Oracle, osservazioni della fonte, "
-        "ipotesi e stime. Non chiamare reali i winrate stimati né inventare campioni o probabilità. "
-        "Se meta assente o datato, dichiaralo ed evita affermazioni sul torneo di oggi.\n"
+        "Le legalità sono una fotografia locale, non una verifica live. Le stime strategiche non sono risultati di partite.\n"
     )
 
 
