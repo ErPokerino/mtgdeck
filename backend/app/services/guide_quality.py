@@ -1,6 +1,7 @@
 """Deterministic checks and transparent estimates; never fabricate empirical samples."""
 
 from collections import Counter
+from copy import deepcopy
 from datetime import datetime, timezone
 import re
 from app.models import MetaSnapshot, SyncLog
@@ -32,7 +33,7 @@ def validate_swaps(plan, entries, in_field="cards_in", out_field="cards_out"):
     return errors
 
 
-def validate_guide(guide, entries):
+def validate_guide(guide, entries, include_rules=True):
     errors = []
     main = Counter()
     for card, board, qty in entries:
@@ -62,7 +63,8 @@ def validate_guide(guide, entries):
                 f"{plan['opponent_archetype']}: {e}"
                 for e in validate_swaps(plan, entries, inf, outf)
             )
-    errors.extend(reflection_copy_errors(guide, entries))
+    if include_rules:
+        errors.extend(reflection_copy_errors(guide, entries))
     return errors
 
 
@@ -155,7 +157,24 @@ def weighted_meta_estimate(guide, archetypes, snapshot=None):
         if covered and valid_shares
         else None
     )
+    status = (
+        "no_meta"
+        if not total
+        else "invalid_shares"
+        if not valid_shares
+        else "no_matchups"
+        if not covered
+        else "available"
+    )
+    reason = {
+        "no_meta": "Nessuno snapshot con quote del metagame disponibile per questo formato. Aggiorna il metagame prima dell’analisi.",
+        "invalid_shares": "Quote della fonte incoerenti: calcolo non disponibile.",
+        "no_matchups": "Nessun matchup della guida corrisponde agli archetipi dello snapshot.",
+        "available": "",
+    }[status]
     return {
+        "status": status,
+        "reason": reason,
         "weighted_winrate_pct": weighted,
         "coverage_pct": round(covered, 2),
         "snapshot_share_pct": round(total, 2),
@@ -167,12 +186,57 @@ def weighted_meta_estimate(guide, archetypes, snapshot=None):
         "fetched_at": snapshot.fetched_at.isoformat() if snapshot else None,
         "formula": "Somma(quota meta × WR teorico Bo3) / somma(quote coperte)",
         "note": "Stima teorica AI, non risultati di partite. Valida solo sul meta coperto; il resto resta ignoto. "
-        + (
-            "Quote della fonte incoerenti: calcolo non disponibile."
-            if not valid_shares
-            else ""
-        ),
+        + reason,
     }
+
+
+def validate_meta_coverage(guide, required_archetypes):
+    """The model must supply one justified Bo3 estimate per requested opponent."""
+    plans = guide.get("sideboard_guide", [])
+    names = Counter(key(p["opponent_archetype"]) for p in plans)
+    errors = [
+        f"Matchup duplicato: {name}." for name, count in names.items() if count > 1
+    ]
+    for arch in required_archetypes:
+        if not names[key(arch.name)]:
+            errors.append(
+                f"Manca il matchup obbligatorio '{arch.name}': usa esattamente questo nome e includi WR teorico Bo3 e motivazione."
+            )
+    for plan in plans:
+        if not plan.get("estimate_rationale", "").strip():
+            errors.append(
+                f"{plan['opponent_archetype']}: manca la motivazione della stima Bo3."
+            )
+    return errors
+
+
+def apply_guide_text_patches(guide, patches):
+    """Apply atomically to existing text only, with exact preconditions and no identity edits."""
+    result = deepcopy(guide)
+    if not patches:
+        raise ValueError("La revisione non contiene correzioni.")
+    protected = {"card_name", "opponent_archetype", "hand_cards", "cards_involved"}
+    for patch in patches:
+        path = patch.path
+        if not path.startswith("/"):
+            raise ValueError("Percorso di correzione non valido.")
+        parts = [p.replace("~1", "/").replace("~0", "~") for p in path[1:].split("/")]
+        if any(p in protected for p in parts):
+            raise ValueError(
+                "La correzione non può modificare l’identità delle carte o dei matchup."
+            )
+        node = result
+        try:
+            for part in parts[:-1]:
+                node = node[int(part)] if isinstance(node, list) else node[part]
+            last = int(parts[-1]) if isinstance(node, list) else parts[-1]
+            current = node[last]
+            if not isinstance(current, str) or current != patch.original_text:
+                raise ValueError("Il testo da correggere non corrisponde alla guida.")
+            node[last] = patch.replacement_text
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError("Percorso di correzione inesistente.") from exc
+    return result
 
 
 def evidence_context(db, fmt, snapshot=None):

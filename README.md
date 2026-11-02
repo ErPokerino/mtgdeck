@@ -39,7 +39,11 @@ Il catalogo viene aggiornato senza cancellare identità collegate ai mazzi. Le a
 
 Le skill motivano engine, densità, manabase, clock, interazioni Oracle, esclusioni, piani alternativi e slot post-side. Prezzo, rarità o tipo Lesson non sono filtri di legalità. Le probabilità di vedere almeno una copia in 7/9/10 carte sono calcolate con distribuzione ipergeometrica; non sono probabilità di poter lanciare la carta. Le liste invalide vengono riproposte all'AI o rifiutate, senza riempire automaticamente i buchi. Mani di esempio e sidate vengono verificate per copie disponibili e bilanciamento IN/OUT.
 
+Le guide passano un ciclo **bozza → controlli deterministici → revisione Oracle → correzioni → nuova verifica**, prima di qualsiasi salvataggio. Per gli errori testuali l’editor applica modifiche mirate con riscontro esatto del testo originale; gli errori strutturali richiedono una nuova versione completa. Sono richiesti tutti i matchup dello snapshot forniti nel prompt, senza duplicati e con motivazione della stima Bo3. Il numero massimo di revisioni è configurabile in `deck_guide.maxValidationRetries`. Solo la versione che supera i controlli viene archiviata, con data e numero di revisioni. Un tentativo fallito lascia intatte le guide precedenti e non le presenta come risultato nuovo. La revisione AI riduce gli errori, ma non è una certificazione formale delle regole.
+
 **Winrate teorico ponderato**: `somma(quota archetipi × WR teorico Bo3) / somma(quote coperte)`. La guida mostra copertura, righe, fonte e data. I matchup mancanti restano ignoti; quote incoerenti impediscono il calcolo. Si tratta di stime AI, non risultati empirici, intervalli statistici o promesse di rendimento. Anche la matrice metagame è esplicitamente euristica, senza campioni inventati. Le guide storiche eventualmente già salvate vengono preservate; non è possibile ricostruire dati che non erano stati registrati.
+
+Ogni nuova guida include `meta_estimate`, anche quando il calcolo non è possibile: `status` e `reason` distinguono snapshot assente, quote incoerenti e matchup non corrispondenti. Il messaggio delle versioni storiche senza dati non viene usato per questi casi.
 
 ## Playtest
 

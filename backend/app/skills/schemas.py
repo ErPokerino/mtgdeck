@@ -287,3 +287,22 @@ class RulesAuditOutput(BaseModel):
         default_factory=list,
         description="Solo contraddizioni dimostrate; vuoto se non individuate",
     )
+
+
+class GuideTextPatch(BaseModel):
+    path: str = Field(
+        description="JSON Pointer della stringa da correggere, es. /card_roles/0/explanation"
+    )
+    original_text: str = Field(
+        description="Intero valore attuale della stringa, copiato esattamente dalla guida"
+    )
+    replacement_text: str = Field(
+        min_length=1,
+        description="Intero testo corretto, coerente con Oracle e strategia",
+    )
+
+
+class GuideRevisionOutput(BaseModel):
+    patches: List[GuideTextPatch] = Field(
+        description="Correzioni mirate di TUTTE le occorrenze degli errori segnalati; non cambiare lista, nomi o quantità"
+    )

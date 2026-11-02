@@ -472,14 +472,23 @@ def test_pdf_embeds_hand_and_card_images(guide_data):
 def test_oracle_audit_blocks_unresolved_contradictions(
     client, db, payload, guide_data, monkeypatch
 ):
-    from app.skills.schemas import RulesAuditOutput, RulesAuditIssue
+    from app.skills.schemas import (
+        RulesAuditOutput,
+        RulesAuditIssue,
+        GuideRevisionOutput,
+    )
 
     did = client.post("/api/decks", json=payload).json()["id"]
+    previous_guide = {"executive_summary": "Versione precedente da conservare"}
+    db.get(Deck, did).guide_json = previous_guide
+    db.commit()
 
     class Provider:
         provider_name = "fake"
 
         def generate_structured(self, **kwargs):
+            if kwargs["response_model"] is GuideRevisionOutput:
+                return GuideRevisionOutput(patches=[])
             if kwargs["response_model"] is RulesAuditOutput:
                 return RulesAuditOutput(
                     issues=[
@@ -496,3 +505,143 @@ def test_oracle_audit_blocks_unresolved_contradictions(
             db, AIDeckGuideRequest(deck_id=did, format_id="modern")
         )
     assert db.query(GuideVersion).count() == 0
+    assert db.get(Deck, did).guide_json == previous_guide
+
+
+def test_guide_repairs_coverage_then_oracle_before_saving(
+    client, db, payload, guide_data, monkeypatch
+):
+    from copy import deepcopy
+    from app.models import MetaSnapshot, MetaArchetype, AIRun
+    from app.skills.schemas import (
+        RulesAuditOutput,
+        RulesAuditIssue,
+        GuideRevisionOutput,
+        GuideTextPatch,
+    )
+
+    did = client.post("/api/decks", json=payload).json()["id"]
+    snapshot = MetaSnapshot(format_id="modern", source="fixture")
+    db.add(snapshot)
+    db.flush()
+    for name, share in [("Aggro", 30), ("Control", 20)]:
+        db.add(
+            MetaArchetype(
+                snapshot_id=snapshot.id,
+                format_id="modern",
+                name=name,
+                slug=name.lower(),
+                meta_share_pct=share,
+            )
+        )
+    db.commit()
+    draft = deepcopy(guide_data)
+    draft["executive_summary"] = "Plains è un istantaneo."
+    corrected = "Plains è una terra base."
+    calls = []
+
+    class Provider:
+        provider_name = "fake"
+
+        def generate_structured(self, **kwargs):
+            kind = kwargs["response_model"]
+            calls.append(kind)
+            if kind is AIDeckGuideOutput:
+                result = deepcopy(draft)
+                if calls.count(AIDeckGuideOutput) > 1:
+                    assert "Manca il matchup obbligatorio" in kwargs["user_prompt"]
+                    for name, wr in [("Aggro", 60), ("Control", 40)]:
+                        result["sideboard_guide"].append(
+                            dict(
+                                opponent_archetype=name,
+                                tier=1,
+                                expected_winrate_pct=wr,
+                                matchup_difficulty="Equilibrato",
+                                gameplan_pre_side="Piano pre",
+                                gameplan_post_side="Piano post",
+                                on_the_play_notes="Play",
+                                on_the_draw_notes="Draw",
+                                cards_in=[],
+                                cards_out=[],
+                                estimate_rationale="Clock e risposte da verificare nei test",
+                            )
+                        )
+                return AIDeckGuideOutput(**result)
+            if kind is RulesAuditOutput:
+                assert (
+                    db.query(GuideVersion).count() == 0
+                )  # No draft has been published.
+                if corrected not in kwargs["user_prompt"]:
+                    return RulesAuditOutput(
+                        issues=[
+                            RulesAuditIssue(
+                                explanation="Plains non è un istantaneo",
+                                oracle_quote="Basic Land",
+                            )
+                        ]
+                    )
+                return RulesAuditOutput(issues=[])
+            assert kind is GuideRevisionOutput
+            return GuideRevisionOutput(
+                patches=[
+                    GuideTextPatch(
+                        path="/executive_summary",
+                        original_text=draft["executive_summary"],
+                        replacement_text=corrected,
+                    )
+                ]
+            )
+
+    monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
+    result = runner.run_deck_guide_skill(
+        db, AIDeckGuideRequest(deck_id=did, format_id="modern")
+    )
+    guide = result["guide"]
+    assert guide["executive_summary"] == corrected
+    assert guide["meta_estimate"]["weighted_winrate_pct"] == 52
+    assert guide["meta_estimate"]["coverage_pct"] == 50
+    assert guide["meta_estimate"]["status"] == "available"
+    assert guide["quality_review"]["revision_count"] == 2
+    assert db.query(GuideVersion).count() == 1
+    assert db.get(Deck, did).guide_json == guide
+    assert db.query(AIRun).one().validation_attempts == 3
+    assert calls == [
+        AIDeckGuideOutput,
+        AIDeckGuideOutput,
+        RulesAuditOutput,
+        GuideRevisionOutput,
+        RulesAuditOutput,
+    ]
+
+
+def test_text_revision_is_atomic_and_cannot_change_cards(guide_data):
+    from app.services.guide_quality import apply_guide_text_patches
+    from app.skills.schemas import GuideTextPatch
+
+    original = guide_data["executive_summary"]
+    patch = GuideTextPatch(
+        path="/executive_summary", original_text=original, replacement_text="Correzione"
+    )
+    wrong = GuideTextPatch(
+        path="/mulligan_examples/0/hand_cards/0",
+        original_text="Plains",
+        replacement_text="Island",
+    )
+    with pytest.raises(ValueError):
+        apply_guide_text_patches(guide_data, [patch, wrong])
+    assert guide_data["executive_summary"] == original
+    patch.original_text = "Testo non presente"
+    with pytest.raises(ValueError):
+        apply_guide_text_patches(guide_data, [patch])
+
+
+def test_unavailable_estimate_explains_the_actual_cause():
+    empty = weighted_meta_estimate({"sideboard_guide": []}, [])
+    assert empty["status"] == "no_meta" and "Nessuno snapshot" in empty["reason"]
+    unmatched = weighted_meta_estimate(
+        {"sideboard_guide": []}, [SimpleNamespace(name="Aggro", meta_share_pct=30)]
+    )
+    assert (
+        unmatched["status"] == "no_matchups"
+        and unmatched["weighted_winrate_pct"] is None
+    )

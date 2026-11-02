@@ -65,6 +65,17 @@ export function GuideReader({
           </a>
         )}
       </div>
+      {guide.quality_review?.status === "passed" && (
+        <p className="text-sm text-emerald-200" role="status">
+          Versione salvata dopo i controlli di lista, sidate, copertura dei
+          matchup e revisione Oracle
+          {guide.quality_review.revision_count > 0 &&
+            ` · ${guide.quality_review.revision_count} cicli di correzione`}
+          {guide.generated_at &&
+            ` · ${new Date(guide.generated_at).toLocaleString("it-IT")}`}
+          .
+        </p>
+      )}
       <div className="grid md:grid-cols-3 gap-4">
         <section className="panel">
           <p className="eyebrow">Valutazione globale</p>
@@ -82,7 +93,7 @@ export function GuideReader({
           </p>
           <p className="text-sm text-slate-300">
             {estimate?.note ||
-              "Questa versione non contiene una stima ponderata. Genera una nuova guida per calcolarla."}
+              "Versione storica senza dati di ponderazione registrati. Il valore non è ricostruibile da questa versione."}
           </p>
           {estimate && (
             <details className="mt-3 text-sm">

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   BookOpen,
   Cpu,
@@ -101,7 +101,9 @@ export function AIStudioView({
     [guide, setGuide] = useState<any>(null),
     [guideId, setGuideId] = useState<number | undefined>();
   const [guideLoading, setGuideLoading] = useState(false),
-    [guideError, setGuideError] = useState("");
+    [guideError, setGuideError] = useState(""),
+    [guideAttempted, setGuideAttempted] = useState(false);
+  const guideRequest = useRef(0);
   const [deckA, setDeckA] = useState<number | "custom">(
       activeDeck?.id || "custom",
     ),
@@ -163,23 +165,26 @@ export function AIStudioView({
     }
   }, [preselectedOpponentArchetype]);
   useEffect(() => {
-    let cancelled = false;
+    const request = ++guideRequest.current;
     setGuide(null);
     setGuideId(undefined);
+    setGuideError("");
+    setGuideLoading(false);
+    setGuideAttempted(false);
     if (guideDeck !== "custom") {
       Promise.all([api.getDeck(guideDeck), api.listGuides(formatId)])
         .then(([d, versions]) => {
-          if (!cancelled && d.guide_json) {
+          if (request === guideRequest.current && d.guide_json) {
             setGuide(d.guide_json);
             setGuideId(versions.find((g) => g.deck_id === guideDeck)?.id);
           }
         })
         .catch((e) => {
-          if (!cancelled) setGuideError(e.message);
+          if (request === guideRequest.current) setGuideError(e.message);
         });
     }
     return () => {
-      cancelled = true;
+      if (request === guideRequest.current) ++guideRequest.current;
     };
   }, [guideDeck, formatId, activeDeck?.guide_json]);
   useEffect(() => {
@@ -252,8 +257,12 @@ export function AIStudioView({
   };
   const runGuide = async (e: React.FormEvent) => {
     e.preventDefault();
+    const request = ++guideRequest.current;
     setGuideLoading(true);
     setGuideError("");
+    setGuideAttempted(true);
+    setGuide(null);
+    setGuideId(undefined);
     try {
       const r = await api.generateDeckGuideAI({
         format_id: formatId,
@@ -263,12 +272,14 @@ export function AIStudioView({
           decks.find((d) => d.id === guideDeck)?.name || "Lista personalizzata",
         model_id: modelId,
       });
-      setGuide(r.guide);
-      setGuideId(r.meta?.guide_id);
+      if (request === guideRequest.current) {
+        setGuide(r.guide);
+        setGuideId(r.meta?.guide_id);
+      }
     } catch (e: any) {
-      setGuideError(e.message);
+      if (request === guideRequest.current) setGuideError(e.message);
     } finally {
-      setGuideLoading(false);
+      if (request === guideRequest.current) setGuideLoading(false);
     }
   };
   const runMatch = async (e: React.FormEvent) => {
@@ -701,20 +712,25 @@ export function AIStudioView({
             <h2 className="text-xl font-bold">
               Guida al mazzo e piano di sideboard
             </h2>
-            {deckSelect(guideDeck, setGuideDeck, "Lista da analizzare")}
-            {guideDeck === "custom" && (
-              <textarea
-                aria-label="Lista personalizzata per guida"
-                className="field w-full min-h-44 font-mono"
-                value={customGuide}
-                onChange={(e) => setCustomGuide(e.target.value)}
-                placeholder={"Deck\n4 Card Name\n…\n\nSideboard\n2 Card Name"}
-              />
-            )}
+            <fieldset
+              disabled={guideLoading}
+              className="space-y-4 disabled:opacity-60"
+            >
+              {deckSelect(guideDeck, setGuideDeck, "Lista da analizzare")}
+              {guideDeck === "custom" && (
+                <textarea
+                  aria-label="Lista personalizzata per guida"
+                  className="field w-full min-h-44 font-mono"
+                  value={customGuide}
+                  onChange={(e) => setCustomGuide(e.target.value)}
+                  placeholder={"Deck\n4 Card Name\n…\n\nSideboard\n2 Card Name"}
+                />
+              )}
+            </fieldset>
             <p className="text-sm text-slate-400">
-              Ogni generazione salva una nuova guida con la lista esatta, fonti
-              e stima teorica ponderata. Una modifica successiva del mazzo non
-              riscrive le guide precedenti.
+              La guida viene verificata e corretta prima del salvataggio. Ogni
+              versione approvata si trova in Mazzi e guide, con lista esatta e
+              fonti. Il winrate ponderato usa le quote del metagame disponibile.
             </p>
             {runButton(
               guideLoading,
@@ -722,10 +738,34 @@ export function AIStudioView({
               guideDeck === "custom" && !customGuide.trim(),
             )}
           </form>
+          {guideLoading && (
+            <div role="status" className="panel flex items-start gap-3">
+              <Loader2 className="animate-spin shrink-0" size={20} />
+              <div>
+                <p className="font-semibold">Preparazione della nuova guida</p>
+                <p className="text-sm text-slate-300 mt-2">
+                  Generazione, controllo delle sidate, revisione Oracle e
+                  correzioni automatiche possono richiedere alcuni minuti. Qui
+                  apparirà solo la versione che supera i controlli.
+                </p>
+              </div>
+            </div>
+          )}
           {guideError && (
-            <p className="notice-error" role="alert">
-              {guideError}
-            </p>
+            <div className="notice-error" role="alert">
+              <p className="font-semibold">
+                {guideAttempted
+                  ? "Generazione non completata"
+                  : "Caricamento non riuscito"}
+              </p>
+              <p className="mt-2">{guideError}</p>
+              {guideAttempted && (
+                <p className="mt-2 text-sm">
+                  Nessuna nuova versione salvata. Le guide precedenti restano in
+                  Mazzi e guide.
+                </p>
+              )}
+            </div>
           )}
           {guide && (
             <GuideReader guide={guide} guideId={guideId} onInspect={inspect} />
