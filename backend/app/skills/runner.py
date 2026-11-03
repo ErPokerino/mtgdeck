@@ -416,6 +416,21 @@ FORMAT_CONSTRUCTED_STAPLES: Dict[str, List[str]] = {
 }
 
 
+def archetype_summary(a: MetaArchetype) -> str:
+    """Only observed facts: no winrate when the source does not publish one."""
+    parts = [
+        a.color_name or "colori n/d",
+        (a.category or "").upper(),
+        f"Tier {a.tier}",
+        f"Quota {a.meta_share_pct}%",
+    ]
+    if a.winrate_pct is not None:
+        parts.append(f"WR {a.winrate_pct}%")
+    if a.decklists_count:
+        parts.append(f"{a.decklists_count} liste analizzate")
+    return f"{a.name} ({', '.join(parts)})"
+
+
 def load_skill_prompt(skill_name: str, version: str = "v1") -> Tuple[str, str]:
     """Carica il file di prompt versionato e restituisce (versione_completa, testo_prompt)."""
     path = PROMPTS_DIR / f"{skill_name}.{version}.md"
@@ -534,7 +549,7 @@ def _get_legal_card_pool_context(
 ) -> str:
     """
     Costruisce il contesto competitivo per la generazione del mazzo.
-    IMPORTANTE: Fornisce ESCLUSIVAMENTE carte realmente giocate nei tornei (MTGTop8 + MTGDecks + Staple Constructed),
+    IMPORTANTE: Fornisce ESCLUSIVAMENTE carte realmente giocate nei tornei (liste MTGTop8 + Staple Constructed),
     divise in:
     - Pool 1: Mainboard Tournament Staples (con % di presenza e copie medie nei tornei)
     - Pool 2: Sideboard Tournament Staples & Tech Cards (con % di presenza in Sideboard)
@@ -577,7 +592,7 @@ def _get_legal_card_pool_context(
         )
         for a in archs[:12]:
             meta_lines.append(
-                f"- {a.name} ({a.color_name}, {a.category.upper()}, Tier {a.tier}, Share {a.meta_share_pct}%, WR {a.winrate_pct}%): Key cards = {', '.join(a.key_cards or [])}"
+                f"- {archetype_summary(a)}: Key cards = {', '.join(a.key_cards or [])}"
             )
 
         # Seleziona fino a 4 liste torneo reali rilevanti (priorità a colori compatibili, poi i top tier che condividono colori)
@@ -1272,7 +1287,7 @@ def _run_deck_guide_skill(
                 ]
                 sample_cards_preview = f" | Lista tipo: {', '.join(dl_lines[:12])}"
             meta_blocks.append(
-                f"- {a.name} (Tier {a.tier}, {a.category.upper()}, Share: {a.meta_share_pct}%, WR: {a.winrate_pct}%, Carte chiave: {', '.join(a.key_cards or [])}){sample_cards_preview}"
+                f"- {archetype_summary(a)}, Carte chiave: {', '.join(a.key_cards or [])}{sample_cards_preview}"
             )
         meta_context = "\n".join(meta_blocks)
 

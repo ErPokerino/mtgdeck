@@ -1,9 +1,9 @@
 import re
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, case, func, not_, or_, text
+from sqlalchemy import and_, case, func, not_, or_
 from sqlalchemy.orm import Session
-from app.database import get_db, is_sqlite
+from app.database import get_db
 from app.models import Card, MetaCardStat, MetaSnapshot
 from app.schemas import CardMetaInfo, CardOut, CardSearchResponse
 from app.services.scryfall_sync import normalize_card_name, sort_colors_wubrg
@@ -290,6 +290,10 @@ def get_card_detail(
         or meta_map.get(card.name.split(" // ")[0].lower())
         or CardMetaInfo()
     )
+    from app.services.card_knowledge import rulings_for, tags_for
+
+    c_out.rulings = rulings_for(db, [card.oracle_id]).get(card.oracle_id, [])
+    c_out.functional_tags = tags_for(db, [card.oracle_id]).get(card.oracle_id, [])
     return c_out
 
 

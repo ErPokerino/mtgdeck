@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  ArchetypeDetail,
   Card,
   CardSearchResponse,
   DeckDetail,
@@ -140,12 +141,23 @@ export const api = {
       method: "POST",
     }),
 
-  loadArchetypeSampleDeck: (formatId: FormatId, archetypeId: number) =>
+  loadArchetypeSampleDeck: (
+    formatId: FormatId,
+    archetypeId: number,
+    decklistId?: number,
+  ) =>
     apiFetch<DeckDetail>(
-      `/api/meta/${formatId}/load-archetype-deck/${archetypeId}`,
+      `/api/meta/${formatId}/load-archetype-deck/${archetypeId}${
+        decklistId != null ? `?decklist_id=${decklistId}` : ""
+      }`,
       {
         method: "POST",
       },
+    ),
+
+  getArchetypeDetail: (formatId: FormatId, archetypeId: number) =>
+    apiFetch<ArchetypeDetail>(
+      `/api/meta/${formatId}/archetypes/${archetypeId}`,
     ),
 
   generateDeckAI: (payload: {

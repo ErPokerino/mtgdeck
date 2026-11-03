@@ -84,7 +84,7 @@ async def lifespan(app: FastAPI):
         # The interval job first fires 24h after start: after downtime, AI features would stay blocked.
         asyncio.create_task(run_scryfall_sync(force_download=False))
 
-    # 3. Scheduler periodico per sincronizzazione Scryfall e Meta (MTGDecks + MTGTop8)
+    # 3. Scheduler periodico per sincronizzazione Scryfall e Meta (MTGTop8)
     if settings.enable_scheduler:
         scheduler.add_job(
             run_scryfall_sync,

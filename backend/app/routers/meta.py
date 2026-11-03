@@ -9,14 +9,20 @@ from app.models import (
     Deck,
     DeckCard,
     MetaArchetype,
+    MetaArchetypeCard,
     MetaCardStat,
     MetaMatchup,
     MetaSnapshot,
+    TournamentDecklist,
 )
 from app.routers.decks import _build_deck_detail, record_revision
 from app.schemas import CardMetaInfo, CardOut
 from app.services.deck_validator import parse_decklist_text, resolve_card_by_name
-from app.services.meta_scraper import run_meta_sync_all, run_meta_sync_for_format
+from app.services.meta_scraper import (
+    decklist_label,
+    run_meta_sync_all,
+    run_meta_sync_for_format,
+)
 
 router = APIRouter(prefix="/api/meta", tags=["Metagame"])
 
@@ -95,6 +101,7 @@ def get_format_meta(
                 "meta_share_pct": a.meta_share_pct,
                 "winrate_pct": a.winrate_pct,
                 "matches_count": a.matches_count,
+                "decklists_count": a.decklists_count,
                 "key_cards": resolved_key_cards,
                 "sample_decklists": a.sample_decklists or [],
                 "source_url": a.source_url,
@@ -164,6 +171,11 @@ def get_format_meta(
             "fetched_at": latest_snap.fetched_at,
             "total_decks_analyzed": latest_snap.total_decks_analyzed,
             "notes": latest_snap.notes,
+            "period_label": latest_snap.period_label,
+            "coverage_pct": latest_snap.coverage_pct,
+            "decklists_count": latest_snap.decklists_count,
+            "quality_status": latest_snap.quality_status,
+            "quality_warnings": latest_snap.quality_warnings or [],
         },
         "archetypes": archetypes_out,
         "matchup_matrix": matrix_map,
@@ -186,22 +198,101 @@ async def trigger_meta_sync(
     }
 
 
+@router.get("/{format_id}/archetypes/{archetype_id}")
+def get_archetype_detail(
+    format_id: str, archetype_id: int, db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """Observed card usage across the archetype's collected lists, plus the lists themselves."""
+    arch = db.get(MetaArchetype, archetype_id)
+    if not arch or arch.format_id != format_id.lower():
+        raise HTTPException(404, "Archetipo non trovato")
+    usage = (
+        db.query(MetaArchetypeCard)
+        .filter_by(archetype_id=arch.id)
+        .order_by(
+            MetaArchetypeCard.main_inclusion_pct.desc(),
+            MetaArchetypeCard.side_inclusion_pct.desc(),
+        )
+        .all()
+    )
+    cards = {
+        c.oracle_id: c
+        for c in db.query(Card).filter(Card.oracle_id.in_([u.oracle_id for u in usage]))
+    } if usage else {}
+    decks = (
+        db.query(TournamentDecklist)
+        .filter(TournamentDecklist.id.in_(arch.decklist_ids or []))
+        .order_by(TournamentDecklist.played_on.desc())
+        .all()
+    )
+    return {
+        "id": arch.id,
+        "name": arch.name,
+        "decklists_count": arch.decklists_count or 0,
+        "cards": [
+            {
+                "oracle_id": u.oracle_id,
+                "card_name": u.card_name,
+                "type_line": cards[u.oracle_id].type_line if u.oracle_id in cards else "",
+                "mana_cost": cards[u.oracle_id].mana_cost if u.oracle_id in cards else "",
+                "main_inclusion_pct": u.main_inclusion_pct,
+                "main_avg_copies": u.main_avg_copies,
+                "side_inclusion_pct": u.side_inclusion_pct,
+                "side_avg_copies": u.side_avg_copies,
+            }
+            for u in usage
+        ],
+        "decklists": [
+            {
+                "id": d.id,
+                "title": d.deck_title,
+                "pilot": d.pilot,
+                "event": d.event_name,
+                "placement": d.placement,
+                "played_on": d.played_on,
+            }
+            for d in decks
+        ],
+    }
+
+
 @router.post("/{format_id}/load-archetype-deck/{archetype_id}")
 def load_archetype_sample_deck(
     format_id: str,
     archetype_id: int,
+    decklist_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
     arch = db.query(MetaArchetype).filter(MetaArchetype.id == archetype_id).first()
-    if not arch or arch.format_id != format_id.lower() or not arch.sample_decklists:
-        raise HTTPException(
-            status_code=404,
-            detail="Sample decklist non disponibile per questo archetipo",
-        )
+    if not arch or arch.format_id != format_id.lower():
+        raise HTTPException(404, "Archetipo non trovato")
 
-    sample = arch.sample_decklists[0]
-    raw_text = sample.get("decklist_text", "")
-    resolved, unresolved = parse_decklist_text(db, raw_text)
+    if decklist_id is not None:
+        if decklist_id not in (arch.decklist_ids or []):
+            raise HTTPException(404, "Lista non associata a questo archetipo")
+        source = db.get(TournamentDecklist, decklist_id)
+        cards = {
+            c.oracle_id: c
+            for c in db.query(Card).filter(
+                Card.oracle_id.in_([c["oracle_id"] for c in source.cards])
+            )
+        }
+        resolved = [
+            (cards[c["oracle_id"]], c["board"], c["quantity"])
+            for c in source.cards
+            if c["oracle_id"] in cards
+        ]
+        unresolved = [c["card_name"] for c in source.cards if c["oracle_id"] not in cards]
+        sample = {
+            "name": decklist_label(arch.name, source.deck_title, source.pilot),
+            "event": f"{source.event_name} #{source.placement}, {source.played_on}",
+            "pilot": source.pilot,
+        }
+    else:
+        if not arch.sample_decklists:
+            raise HTTPException(404, "Sample decklist non disponibile per questo archetipo")
+        sample = arch.sample_decklists[0]
+        resolved, unresolved = parse_decklist_text(db, sample.get("decklist_text", ""))
     if not resolved or unresolved:
         raise HTTPException(
             422,

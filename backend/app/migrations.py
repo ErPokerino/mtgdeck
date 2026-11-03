@@ -2,7 +2,7 @@
 
 import logging
 
-from sqlalchemy import Integer, cast, func, or_, text
+from sqlalchemy import Integer, cast, func, inspect, or_, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
@@ -10,6 +10,35 @@ from sqlalchemy.schema import CreateTable
 from app.models import AIRun, Card, Deck, DeckRevision, GuideJob, GuideVersion, utcnow
 
 log = logging.getLogger("uvicorn.error")
+
+
+def add_missing_columns(engine: Engine) -> list[str]:
+    """`create_all` creates new tables but never alters existing ones: add new nullable columns."""
+    from app.database import Base
+
+    added = []
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            present = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in present:
+                    continue
+                if not column.nullable:
+                    raise RuntimeError(
+                        f"Nuova colonna obbligatoria {table.name}.{column.name}: serve una migrazione dedicata"
+                    )
+                col_type = column.type.compile(dialect=engine.dialect)
+                conn.exec_driver_sql(
+                    f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {col_type}'
+                )
+                added.append(f"{table.name}.{column.name}")
+    if added:
+        log.info("added columns: %s", ", ".join(added))
+    return added
 
 
 def repair_card_copy_limits(db: Session) -> int:
@@ -197,6 +226,7 @@ def backfill_missing_revisions(db: Session) -> int:
 
 
 def run_startup_repairs(engine: Engine, session_factory) -> None:
+    add_missing_columns(engine)
     ensure_decks_autoincrement(engine)
     with session_factory() as db:
         if db.query(func.count(Card.oracle_id)).scalar():

@@ -82,6 +82,9 @@ class CardOut(BaseModel):
     legality_pioneer: str = "not_legal"
     legality_modern: str = "not_legal"
     meta_info: Optional[CardMetaInfo] = None
+    # Filled only by the card detail endpoint.
+    rulings: Optional[List[Dict[str, Any]]] = None
+    functional_tags: Optional[List[str]] = None
 
     model_config = {"from_attributes": True}
 

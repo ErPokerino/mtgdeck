@@ -42,6 +42,16 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8090,http://localhost:8090"
     )
 
+    # Metagame da MTGTop8: richieste HTTP normali, identificate e distanziate
+    meta_user_agent: str = "AetherdeckWorkbench/1.0 (personal deck analysis)"
+    meta_request_delay_ms: int = 700
+    meta_lists_per_archetype: int = 15
+    meta_min_lists_per_archetype: int = 3
+    meta_max_archetypes: int = 25
+    meta_coverage_target_pct: float = 90.0
+    meta_keep_snapshots: int = 4
+    meta_decklist_cache_days: int = 180
+
     # Sync scheduling
     enable_scheduler: bool = True
     scryfall_sync_interval_hours: int = 24

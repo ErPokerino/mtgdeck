@@ -1,5 +1,6 @@
 import asyncio
 import gzip
+import logging
 import re
 import time
 import unicodedata
@@ -381,17 +382,33 @@ async def run_scryfall_sync(force_download: bool = False) -> Dict[str, Any]:
                     bulk_file_path.unlink()
                 tmp_path.rename(bulk_file_path)
 
+            # Optional knowledge files: a failure must not block the card catalog.
+            knowledge_paths: Dict[str, Path] = {}
+            for kind in ("rulings", "oracle_tags"):
+                try:
+                    scryfall_state.message = f"Download Scryfall {kind}..."
+                    knowledge_paths[kind] = await _fetch_small_bulk(
+                        client, bulk_items, kind, force_download
+                    )
+                except (httpx.HTTPError, KeyError, StopIteration) as exc:
+                    logging.getLogger("uvicorn.error").warning(
+                        "Scryfall %s not downloaded: %s", kind, type(exc).__name__
+                    )
+
         # 3. Parsing veloce con orjson e popolamento DB + FTS5 in un thread dedicato per non bloccare l'event loop
         scryfall_state.progress_pct = 62.0
         scryfall_state.message = "Lettura e parsing JSON completo Scryfall in corso..."
 
         total_inserted = await asyncio.to_thread(_ingest_bulk_file_sync, bulk_file_path)
 
+        scryfall_state.message = "Ruling e tag funzionali..."
+        knowledge_note = await asyncio.to_thread(_ingest_knowledge, knowledge_paths)
+
         now_dt = utcnow()
         sync_log.status = "completed"
         sync_log.records_processed = total_inserted
         sync_log.message = (
-            f"Sincronizzate {total_inserted} carte e aggiornato indice FTS5."
+            f"Sincronizzate {total_inserted} carte e aggiornato indice FTS5. {knowledge_note}"
         )
         sync_log.completed_at = now_dt
         db.commit()
@@ -420,6 +437,49 @@ async def run_scryfall_sync(force_download: bool = False) -> Dict[str, Any]:
         raise
     finally:
         db.close()
+
+
+async def _fetch_small_bulk(
+    client: httpx.AsyncClient, bulk_items: List[Dict[str, Any]], kind: str, force: bool
+) -> Path:
+    info = next(item for item in bulk_items if item.get("type") == kind)
+    path = DATA_DIR / f"scryfall_{kind}.jsonl.gz"
+    if (
+        not force
+        and path.exists()
+        and (time.time() - path.stat().st_mtime) / 3600.0 < 20
+    ):
+        return path
+    response = await client.get(info["jsonl_download_uri"])
+    response.raise_for_status()
+    tmp = path.with_suffix(".part")
+    tmp.write_bytes(response.content)
+    tmp.replace(path)
+    await asyncio.sleep(settings.scryfall_rate_limit_ms / 1000.0)
+    return path
+
+
+def _ingest_knowledge(paths: Dict[str, Path]) -> str:
+    from app.services.card_knowledge import ingest_rulings, ingest_tags
+
+    notes = []
+    for kind, ingest, label in (
+        ("rulings", ingest_rulings, "ruling"),
+        ("oracle_tags", ingest_tags, "tag funzionali"),
+    ):
+        if kind not in paths:
+            notes.append(f"{label}: non scaricati")
+            continue
+        db = SessionLocal()
+        try:
+            notes.append(f"{label}: {ingest(db, paths[kind])}")
+        except Exception as exc:  # noqa: BLE001 - optional data, the catalog stays valid
+            db.rollback()
+            logging.getLogger("uvicorn.error").exception("Scryfall %s ingest failed", kind)
+            notes.append(f"{label}: errore {type(exc).__name__}")
+        finally:
+            db.close()
+    return "; ".join(notes) + "."
 
 
 def apply_set_legality(all_sets, set_counts: Dict[str, Dict[str, int]]) -> None:

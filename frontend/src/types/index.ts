@@ -38,10 +38,48 @@ export interface FormatDetail extends FormatInfo {
   banned_cards: BannedCardInfo[];
 }
 
-/** Archetypes whose reference list contains the card, with the copies observed there. */
+/** Observed usage of a card in an archetype's collected lists (older snapshots: copies in one list). */
 export interface CardArchetypeUsage {
   archetype: string;
+  main_inclusion_pct?: number;
+  main_avg_copies?: number;
+  side_inclusion_pct?: number;
+  side_avg_copies?: number;
   sample_copies?: number;
+}
+
+export interface CardRulingInfo {
+  published_at?: string;
+  source?: string;
+  comment: string;
+}
+
+export interface ArchetypeCardUsage {
+  oracle_id: string;
+  card_name: string;
+  type_line: string;
+  mana_cost?: string;
+  main_inclusion_pct: number;
+  main_avg_copies: number;
+  side_inclusion_pct: number;
+  side_avg_copies: number;
+}
+
+export interface ArchetypeDecklistRef {
+  id: number;
+  title?: string;
+  pilot?: string;
+  event?: string;
+  placement?: string;
+  played_on?: string;
+}
+
+export interface ArchetypeDetail {
+  id: number;
+  name: string;
+  decklists_count: number;
+  cards: ArchetypeCardUsage[];
+  decklists: ArchetypeDecklistRef[];
 }
 
 export interface CardMetaInfo {
@@ -95,6 +133,8 @@ export interface Card {
   legality_pioneer: string;
   legality_modern: string;
   meta_info?: CardMetaInfo | null;
+  rulings?: CardRulingInfo[] | null;
+  functional_tags?: string[] | null;
 }
 
 export interface CardSearchResponse {
@@ -221,8 +261,10 @@ export interface MetaArchetypeInfo {
   colors: string[];
   color_name?: string;
   meta_share_pct: number;
-  winrate_pct: number;
+  /** null when the source publishes no winrate. */
+  winrate_pct: number | null;
   matches_count: number;
+  decklists_count?: number | null;
   key_cards: Array<{
     oracle_id?: string;
     name: string;
@@ -231,9 +273,11 @@ export interface MetaArchetypeInfo {
     card?: Card;
   }>;
   sample_decklists: Array<{
+    decklist_id?: number;
     name: string;
     pilot?: string;
     event?: string;
+    played_on?: string;
     decklist_text: string;
   }>;
   source_url?: string;
@@ -260,6 +304,11 @@ export interface FormatMetaResponse {
     fetched_at: string;
     total_decks_analyzed: number;
     notes?: string;
+    period_label?: string | null;
+    coverage_pct?: number | null;
+    decklists_count?: number | null;
+    quality_status?: "ok" | "degraded" | null;
+    quality_warnings?: string[];
   };
   archetypes: MetaArchetypeInfo[];
   matchup_matrix: Record<

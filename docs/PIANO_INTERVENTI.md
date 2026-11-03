@@ -102,6 +102,25 @@ Senza questa fase, qualunque miglioramento di prompt produce analisi sicure di s
 - **D6. Ruling Scryfall.** Scaricare e salvare in cache `/cards/{id}/rulings` per le carte usate nei mazzi e nelle liste del meta. Servono alle guide (G-3).
 - **D7. Fonti (decisione richiesta).** Lo scraping di MTGTop8 e MTGDecks è fragile. Valutare l'aggiunta di MTGO Decklists ufficiali o di Melee.gg; preferire fonti con dati strutturati.
 
+### Stato Fase 1 (2026-11-04)
+
+Fonte unica **MTGTop8**, letta con HTTP normale, User-Agent identificativo e 0,7 s tra le richieste. **MTGDecks è stato rimosso.** Risponde 403 ai client che non sono browser, l'app lo leggeva impersonando Chrome per superare Cloudflare, e il suo robots.txt vieta l'addestramento AI e non autorizza l'uso come input AI. Con lui spariscono il winrate per archetipo e le librerie `curl_cffi` e `cloudscraper`. Se vuoi recuperare i winrate serve una fonte che li pubblichi in modo accessibile.
+
+Stato dei singoli punti:
+- **D1 – fatto.** Fino a 15 liste recenti complete per archetipo, con evento, piazzamento, data e pilota, in una cache persistente (`tournament_decklists`). Una lista che contiene una carta poi bandita viene esclusa.
+- **D2 – fatto.** Archetipi fino al 90% della quota (massimo 25), più la quota scoperta dichiarata.
+- **D3 – nessuna fonte accessibile pubblica dati testa a testa.** I nuovi snapshot non hanno matrice e l'interfaccia lo spiega, rimandando all'analisi matchup.
+- **D4 – fatto.** Tabella `meta_archetype_cards` con inclusione e copie medie per main e side. La presenza nel formato è ponderata per quota. Colori, carte chiave e liste d'esempio sono derivati dalle liste.
+- **D5 – fatto.** Copertura, liste analizzate e avvisi; stato "parziale" sotto il 70% di copertura; fallimento esplicito se la pagina non è riconosciuta; conservati gli ultimi 4 snapshot per formato.
+- **D6 – fatto, ed esteso.** Bulk Scryfall dei ruling e dei tag funzionali di Tagger (rimozione, counterspell, pescata, hate al cimitero…), mostrati nella scheda carta e pronti per le Fasi 2–3.
+
+Interfaccia aggiornata:
+- intestazione con periodo, liste e copertura;
+- pannello archetipo con le carte osservate e le singole liste caricabili nel builder;
+- winrate "n/d" quando la fonte non lo pubblica.
+
+Prova reale: Pioneer, 675 mazzi nel periodo, 18 archetipi, 261 liste complete, copertura 90%, 4 minuti alla prima sync e 16 secondi con la cache.
+
 ---
 
 ## 4. Fase 2 — Nuovo processo di generazione mazzi
@@ -320,7 +339,7 @@ Dipendenze principali:
 ## 9. Decisioni richieste
 
 1. ~~Modalità predefinita del generatore~~ — **decisa**: brew e archetipi fuori meta pienamente supportati, sempre ottimizzati contro il meta (4.1). Le guide coprono tutti i matchup principali; il dettaglio va all'analisi matchup (G-4).
-2. **Fonti dati.** Restare su scraping di MTGTop8 e MTGDecks rafforzato, oppure aggiungere fonti strutturate (MTGO ufficiale, Melee)?
+2. **Fonti dati.** In Fase 1 è rimasto solo MTGTop8 e MTGDecks è stato rimosso (vedi "Stato Fase 1"). Da confermare, o da integrare con fonti strutturate come MTGO ufficiale o Melee, soprattutto per avere winrate e matchup osservati.
 3. **Budget AI per le guide.** Le guide più profonde costano di più: più chiamate e modello Argon per i matchup. Serve un tetto di costo per guida.
 4. **Lingua dell'interfaccia** (U5).
 5. **Priorità mobile.** Il builder su telefono è un requisito reale, o basta il tablet?

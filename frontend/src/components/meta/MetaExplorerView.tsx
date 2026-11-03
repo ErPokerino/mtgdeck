@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { api } from "../../api/client";
 import type {
+  ArchetypeDetail,
   Card,
   DeckDetail,
   FormatId,
@@ -23,6 +24,7 @@ import type {
 import { CardInfoModal } from "../common/CardInfoModal";
 import { ColorBadges, ManaCost } from "../common/ManaCost";
 import { ResizableSplitPane } from "../common/ResizableSplitPane";
+import { archetypeUsageLabel } from "../common/metaLabels";
 
 interface MetaExplorerViewProps {
   formatId: FormatId;
@@ -97,15 +99,44 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
     }
   };
 
-  const handleLoadSampleDeck = async (arch: MetaArchetypeInfo) => {
+  const [loadError, setLoadError] = useState("");
+  const handleLoadSampleDeck = async (
+    arch: MetaArchetypeInfo,
+    decklistId?: number,
+  ) => {
     setLoadingArchetypeId(arch.id);
+    setLoadError("");
     try {
-      const deck = await api.loadArchetypeSampleDeck(formatId, arch.id);
+      const deck = await api.loadArchetypeSampleDeck(
+        formatId,
+        arch.id,
+        decklistId,
+      );
       onLoadDeckToBuilder(deck);
+    } catch (err: any) {
+      setLoadError(err.message);
     } finally {
       setLoadingArchetypeId(null);
     }
   };
+
+  const [archDetail, setArchDetail] = useState<ArchetypeDetail | null>(null);
+  useEffect(() => {
+    setArchDetail(null);
+    if (selectedArchetypeId == null) return;
+    let cancelled = false;
+    api
+      .getArchetypeDetail(formatId, selectedArchetypeId)
+      .then((d) => {
+        if (!cancelled) setArchDetail(d);
+      })
+      .catch(() => {
+        /* older snapshots have no per-archetype statistics */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [formatId, selectedArchetypeId]);
 
   const archetypes = metaData?.archetypes || [];
   const matrix = metaData?.matchup_matrix || {};
@@ -245,9 +276,8 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
 
   if (loading && !metaData) {
     return (
-      <div className="p-12 text-center text-sm text-slate-400">
-        Caricamento telemetria Metagame ({formatId.toUpperCase()}) da MTGDecks &
-        MTGTop8...
+      <div className="p-12 text-center text-sm text-slate-400" role="status">
+        Caricamento del metagame {formatId.toUpperCase()}…
       </div>
     );
   }
@@ -263,13 +293,13 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
               Metagame & Matchup Matrix — {formatId.toUpperCase()}
             </h1>
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono-tech bg-sky-950/70 text-sky-300 border border-sky-700/40">
-              {metaData?.snapshot.source || "MTGDecks + MTGTop8"}
+              {metaData?.snapshot.source || "Nessuno snapshot"}
             </span>
           </div>
-          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
             <span className="flex items-center gap-1">
               <Clock className="w-3.5 h-3.5 text-[#C8AA6E]" />
-              Ultimo aggiornamento:{" "}
+              Aggiornato:{" "}
               <strong className="text-slate-200 font-mono-tech">
                 {metaData?.snapshot.fetched_at
                   ? new Date(metaData.snapshot.fetched_at).toLocaleString(
@@ -278,15 +308,30 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                   : "N/D"}
               </strong>
             </span>
-            <span>•</span>
             <span>
-              Mazzi torneo analizzati:{" "}
+              Mazzi nel periodo:{" "}
               <strong className="text-[#C8AA6E] font-mono-tech">
                 {(metaData?.snapshot.total_decks_analyzed || 0).toLocaleString(
                   "it-IT",
                 )}
               </strong>
             </span>
+            {metaData?.snapshot.decklists_count != null && (
+              <span>
+                Liste analizzate:{" "}
+                <strong className="text-[#C8AA6E] font-mono-tech">
+                  {metaData.snapshot.decklists_count}
+                </strong>
+              </span>
+            )}
+            {metaData?.snapshot.coverage_pct != null && (
+              <span title="Quota del meta coperta da archetipi con liste sufficienti per le statistiche">
+                Copertura:{" "}
+                <strong className="text-[#C8AA6E] font-mono-tech">
+                  {metaData.snapshot.coverage_pct.toFixed(0)}%
+                </strong>
+              </span>
+            )}
           </div>
         </div>
 
@@ -336,13 +381,37 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
             <RefreshCw
               className={`w-3.5 h-3.5 ${syncing ? "animate-spin text-[#C8AA6E]" : ""}`}
             />
-            <span>{syncing ? "Scraping..." : "Aggiorna Meta"}</span>
+            <span>
+              {syncing ? "Aggiornamento (qualche minuto)…" : "Aggiorna meta"}
+            </span>
           </button>
         </div>
       </div>
 
+      {(metaData?.snapshot.quality_warnings?.length ?? 0) > 0 && (
+        <details
+          className={`rounded-xl border p-4 text-sm ${
+            metaData?.snapshot.quality_status === "degraded"
+              ? "bg-amber-950/30 border-amber-700/50 text-amber-100"
+              : "bg-[#0D111A] border-[#1E2638] text-slate-300"
+          }`}
+          open={metaData?.snapshot.quality_status === "degraded"}
+        >
+          <summary className="cursor-pointer font-semibold">
+            {metaData?.snapshot.quality_status === "degraded"
+              ? "Dati del metagame parziali: usali con cautela"
+              : `Note sulla qualità dei dati (${metaData?.snapshot.quality_warnings?.length})`}
+          </summary>
+          <ul className="mt-2 space-y-1 text-xs list-disc pl-5">
+            {metaData?.snapshot.quality_warnings?.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+
       {/* =====================================================================
-          SUB-TAB 1: TOP ARCHETYPES & TIER LIST (MTGDecks + MTGTop8)
+          SUB-TAB 1: TOP ARCHETYPES & TIER LIST
          ===================================================================== */}
       {subTab === "archetypes" && (
         <ResizableSplitPane
@@ -401,34 +470,49 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                       <div className="grid grid-cols-3 gap-2 pt-1">
                         <div className="p-2.5 rounded-lg bg-[#090C12] border border-[#192132]">
                           <div className="text-[10px] text-slate-400">
-                            Meta Share
+                            Quota meta
                           </div>
                           <div className="text-base font-bold font-mono-tech text-[#F3E5C8]">
-                            {arch.meta_share_pct.toFixed(2)}%
+                            {arch.meta_share_pct.toFixed(1)}%
                           </div>
                         </div>
-                        <div className="p-2.5 rounded-lg bg-[#090C12] border border-[#192132]">
+                        <div
+                          className="p-2.5 rounded-lg bg-[#090C12] border border-[#192132]"
+                          title={
+                            arch.winrate_pct == null
+                              ? "La fonte non pubblica winrate"
+                              : undefined
+                          }
+                        >
                           <div className="text-[10px] text-slate-400">
                             Winrate
                           </div>
-                          <div
-                            className={`text-base font-bold font-mono-tech ${
-                              arch.winrate_pct >= 53
-                                ? "text-emerald-400"
-                                : arch.winrate_pct >= 50
-                                  ? "text-sky-400"
-                                  : "text-amber-400"
-                            }`}
-                          >
-                            {arch.winrate_pct.toFixed(0)}%
-                          </div>
+                          {arch.winrate_pct == null ? (
+                            <div className="text-base font-bold font-mono-tech text-slate-500">
+                              n/d
+                            </div>
+                          ) : (
+                            <div
+                              className={`text-base font-bold font-mono-tech ${
+                                arch.winrate_pct >= 53
+                                  ? "text-emerald-400"
+                                  : arch.winrate_pct >= 50
+                                    ? "text-sky-400"
+                                    : "text-amber-400"
+                              }`}
+                            >
+                              {arch.winrate_pct.toFixed(0)}%
+                            </div>
+                          )}
                         </div>
                         <div className="p-2.5 rounded-lg bg-[#090C12] border border-[#192132]">
                           <div className="text-[10px] text-slate-400">
-                            Decks / Match
+                            Liste analizzate
                           </div>
                           <div className="text-sm font-bold font-mono-tech text-slate-200">
-                            {arch.matches_count.toLocaleString("it-IT")}
+                            {arch.decklists_count ??
+                              arch.sample_decklists?.length ??
+                              0}
                           </div>
                         </div>
                       </div>
@@ -485,8 +569,8 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                           <FolderPlus className="w-3.5 h-3.5" />
                           <span>
                             {loadingArchetypeId === arch.id
-                              ? "Caricamento..."
-                              : "Apri Sample Deck nel Builder"}
+                              ? "Caricamento…"
+                              : "Apri la lista più recente nel builder"}
                           </span>
                         </button>
                       )}
@@ -498,7 +582,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                           title="Analizza Matchup contro questo archetipo con l'AI"
                         >
                           <TrendingUp className="w-3.5 h-3.5" />
-                          <span>Test Matchup AI</span>
+                          <span>Analisi matchup AI</span>
                         </button>
                       )}
                     </div>
@@ -536,38 +620,148 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                   <ColorBadges colors={selectedArch.colors} size="sm" />
                 </div>
 
-                {/* Quick Matchup Spread vs Top Tier */}
-                <div className="space-y-1.5">
-                  <div className="text-xs font-bold uppercase text-sky-300">
-                    Winrate Principali nel Metagame
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
-                    {Object.entries(archMatchups)
-                      .filter(([opp]) => opp !== selectedArch.name)
-                      .slice(0, 6)
-                      .map(([opp, data]) => (
-                        <div
-                          key={opp}
-                          className="px-2.5 py-1.5 rounded bg-[#090C12] border border-[#1B2336] flex items-center justify-between text-xs"
-                        >
-                          <span className="truncate text-slate-300 mr-1">
-                            vs {opp}
-                          </span>
-                          <span
-                            className={`font-mono-tech font-bold ${
-                              data.winrate_pct >= 52
-                                ? "text-emerald-400"
-                                : data.winrate_pct <= 48
-                                  ? "text-rose-400"
-                                  : "text-slate-200"
-                            }`}
-                          >
-                            {data.winrate_pct.toFixed(0)}%
-                          </span>
+                {loadError && (
+                  <p className="notice-error text-xs" role="alert">
+                    {loadError}
+                  </p>
+                )}
+
+                {archDetail && archDetail.id === selectedArch.id && (
+                  <>
+                    <div className="space-y-1.5">
+                      <div className="text-xs font-bold uppercase text-[#C8AA6E]">
+                        Carte osservate in {archDetail.decklists_count} liste
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        % delle liste che giocano la carta e copie medie in
+                        quelle liste. Le carte sotto il 100% sono gli slot
+                        flessibili dell&apos;archetipo.
+                      </p>
+                      <div className="max-h-64 overflow-y-auto rounded-lg border border-[#1B2336]">
+                        <table className="w-full text-[11px]">
+                          <thead className="sticky top-0 bg-[#0D111A]">
+                            <tr className="text-slate-400 text-left">
+                              <th className="px-2 py-1.5 font-medium">Carta</th>
+                              <th className="px-2 py-1.5 font-medium text-right">
+                                Main
+                              </th>
+                              <th className="px-2 py-1.5 font-medium text-right">
+                                Side
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {archDetail.cards.map((c) => (
+                              <tr
+                                key={c.oracle_id}
+                                className="border-t border-[#161D2C]"
+                              >
+                                <td className="px-2 py-1">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleInspectCardByName(c.card_name)
+                                    }
+                                    className="text-left text-slate-100 hover:text-[#F3E5C8] cursor-pointer"
+                                  >
+                                    {c.card_name}
+                                  </button>
+                                </td>
+                                <td className="px-2 py-1 text-right font-mono-tech text-slate-200">
+                                  {c.main_inclusion_pct
+                                    ? `${Math.round(c.main_inclusion_pct)}% · ${c.main_avg_copies}x`
+                                    : "—"}
+                                </td>
+                                <td className="px-2 py-1 text-right font-mono-tech text-sky-300">
+                                  {c.side_inclusion_pct
+                                    ? `${Math.round(c.side_inclusion_pct)}% · ${c.side_avg_copies}x`
+                                    : "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {archDetail.decklists.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="text-xs font-bold uppercase text-[#C8AA6E]">
+                          Liste analizzate
                         </div>
-                      ))}
+                        <ul className="space-y-1 max-h-48 overflow-y-auto">
+                          {archDetail.decklists.map((d) => (
+                            <li
+                              key={d.id}
+                              className="flex items-center justify-between gap-2 px-2 py-1.5 rounded bg-[#090C12] border border-[#1B2336] text-[11px]"
+                            >
+                              <span className="min-w-0">
+                                <span className="text-slate-100">
+                                  {d.pilot || "Pilota n/d"}
+                                </span>
+                                <span className="block text-slate-400 truncate">
+                                  {d.event}
+                                  {d.placement ? ` · #${d.placement}` : ""}
+                                  {d.played_on
+                                    ? ` · ${new Date(d.played_on).toLocaleDateString("it-IT")}`
+                                    : ""}
+                                </span>
+                              </span>
+                              <button
+                                type="button"
+                                disabled={
+                                  loadingArchetypeId === selectedArch.id
+                                }
+                                onClick={() =>
+                                  handleLoadSampleDeck(selectedArch, d.id)
+                                }
+                                className="shrink-0 px-2 py-1 rounded bg-[#161E31] hover:bg-[#1E2942] border border-[#2C3A5E] text-[#F3E5C8] cursor-pointer disabled:opacity-40"
+                                aria-label={`Apri nel builder la lista di ${d.pilot || "pilota sconosciuto"}`}
+                              >
+                                Apri
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Older snapshots only: heuristic estimates, never observed results */}
+                {Object.keys(archMatchups).length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="text-xs font-bold uppercase text-sky-300">
+                      Stime euristiche (non risultati osservati)
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
+                      {Object.entries(archMatchups)
+                        .filter(([opp]) => opp !== selectedArch.name)
+                        .slice(0, 6)
+                        .map(([opp, data]) => (
+                          <div
+                            key={opp}
+                            className="px-2.5 py-1.5 rounded bg-[#090C12] border border-[#1B2336] flex items-center justify-between text-xs"
+                          >
+                            <span className="truncate text-slate-300 mr-1">
+                              vs {opp}
+                            </span>
+                            <span
+                              className={`font-mono-tech font-bold ${
+                                data.winrate_pct >= 52
+                                  ? "text-emerald-400"
+                                  : data.winrate_pct <= 48
+                                    ? "text-rose-400"
+                                    : "text-slate-200"
+                              }`}
+                            >
+                              {data.winrate_pct.toFixed(0)}%
+                            </span>
+                          </div>
+                        ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Sample Tournament Decklist */}
                 {sample?.decklist_text && (
@@ -643,9 +837,22 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
       )}
 
       {/* =====================================================================
-          SUB-TAB 2: MATCHUP MATRIX HEATMAP (MTGDecks Winrates)
+          SUB-TAB 2: MATCHUP MATRIX (older snapshots: heuristic estimates)
          ===================================================================== */}
-      {subTab === "matrix" && (
+      {subTab === "matrix" && Object.keys(matrix).length === 0 && (
+        <div className="bg-[#0D111A] border border-[#1E2638] rounded-xl p-8 text-center space-y-2">
+          <h2 className="font-bold text-sm text-[#F3E5C8]">
+            Nessun dato testa a testa disponibile
+          </h2>
+          <p className="text-sm text-slate-400 max-w-2xl mx-auto">
+            La fonte del metagame pubblica quote e liste, non i risultati dei
+            singoli matchup. Per studiare uno scontro usa{" "}
+            <strong className="text-slate-200">Analisi matchup AI</strong> da
+            una scheda archetipo: confronta le liste reali dei due mazzi.
+          </p>
+        </div>
+      )}
+      {subTab === "matrix" && Object.keys(matrix).length > 0 && (
         <div className="bg-[#0D111A] border border-[#1E2638] rounded-xl p-5 space-y-4 overflow-x-auto">
           <div className="flex items-center justify-between">
             <div>
@@ -771,18 +978,15 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-bold text-sm text-[#F3E5C8] flex items-center gap-2">
-                  <span>
-                    Tutte le Carte Più Giocate in {formatId.toUpperCase()}{" "}
-                    (Fonte Live: MTGTop8)
-                  </span>
+                  <span>Carte più giocate in {formatId.toUpperCase()}</span>
                   <span className="px-2 py-0.5 rounded bg-[#C8AA6E]/20 border border-[#C8AA6E]/40 text-[#F3E5C8] text-[11px] font-mono-tech">
                     {filteredTopCards.length} / {topCards.length} carte
                   </span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Elenco completo di tutte le carte giocate nel metagame
-                  competitivo (Mainboard, Sideboard e Terre). Filtra per colore,
-                  tipo, board, rarità o archetipo.
+                  Presenza calcolata sulle liste raccolte, ponderata per la
+                  quota di ogni archetipo con liste sufficienti. Filtra per
+                  colore, tipo, board, rarità o archetipo.
                 </p>
               </div>
 
@@ -1058,10 +1262,11 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                                 className="px-2 py-0.5 rounded bg-[#0A0D15] border border-[#222C42] text-[11px] text-slate-200 font-mono-tech"
                               >
                                 {arch.archetype}
-                                {arch.sample_copies != null && (
-                                  <>
-                                    : <strong>{arch.sample_copies}x</strong>
-                                  </>
+                                {archetypeUsageLabel(arch) && (
+                                  <span className="text-slate-400">
+                                    {" "}
+                                    · {archetypeUsageLabel(arch)}
+                                  </span>
                                 )}
                               </span>
                             ))}

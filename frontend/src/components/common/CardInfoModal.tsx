@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { BarChart3, FlipHorizontal, Plus, ShieldCheck, X } from "lucide-react";
-import type { Card, FormatId } from "../../types";
+import { api } from "../../api/client";
+import type { Card, CardRulingInfo, FormatId } from "../../types";
 import { ManaCost, OracleTextRenderer, SetSymbol } from "./ManaCost";
+import { archetypeUsageLabel } from "./metaLabels";
 
 interface CardInfoModalProps {
   card: Card | null;
@@ -17,10 +19,32 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
   onAddCard,
 }) => {
   const [showBackFace, setShowBackFace] = useState(false);
+  const [knowledge, setKnowledge] = useState<{
+    tags: string[];
+    rulings: CardRulingInfo[];
+  } | null>(null);
 
   useEffect(() => {
     setShowBackFace(false);
-  }, [card?.oracle_id]);
+    setKnowledge(null);
+    if (!card) return;
+    let cancelled = false;
+    api
+      .getCardDetail(card.oracle_id, formatId)
+      .then((detail) => {
+        if (!cancelled)
+          setKnowledge({
+            tags: detail.functional_tags || [],
+            rulings: detail.rulings || [],
+          });
+      })
+      .catch(() => {
+        /* rulings and tags are optional extras */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [card?.oracle_id, formatId]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -186,7 +210,40 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                 )}
               </div>
               <OracleTextRenderer text={card.oracle_text} className="text-xs" />
+              {knowledge && knowledge.tags.length > 0 && (
+                <div
+                  className="flex flex-wrap gap-1 pt-1"
+                  aria-label="Ruoli funzionali"
+                >
+                  {knowledge.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="px-1.5 py-0.5 rounded bg-[#141B2B] border border-[#26324D] text-[10px] font-mono-tech text-slate-300"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
+
+            {knowledge && knowledge.rulings.length > 0 && (
+              <details className="p-3 rounded-lg bg-[#090C12] border border-[#1D2536]">
+                <summary className="cursor-pointer text-[11px] font-mono-tech uppercase text-slate-300">
+                  Ruling ufficiali ({knowledge.rulings.length})
+                </summary>
+                <ul className="mt-2 space-y-2 text-xs text-slate-300 leading-relaxed">
+                  {knowledge.rulings.map((r, i) => (
+                    <li key={i}>
+                      <span className="text-slate-500 font-mono-tech mr-1.5">
+                        {r.published_at}
+                      </span>
+                      {r.comment}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
 
             {/* Legalità Formati */}
             <div className="space-y-1.5">
@@ -219,7 +276,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                   </span>
                 </div>
                 <span className="text-[10px] font-mono-tech text-slate-400">
-                  Fonte: MTGTop8 / MTGDecks
+                  Fonte: liste MTGTop8
                 </span>
               </div>
 
@@ -261,22 +318,20 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                   {meta.top_archetypes && meta.top_archetypes.length > 0 && (
                     <div className="space-y-1.5">
                       <div className="text-[11px] font-semibold text-slate-300">
-                        Presente nelle liste di riferimento di:
+                        Uso osservato negli archetipi principali:
                       </div>
                       <div className="space-y-1">
                         {meta.top_archetypes.map((arch, idx) => (
                           <div
                             key={idx}
-                            className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded bg-[#0A0D15] border border-[#182032]"
+                            className="flex items-center justify-between gap-3 text-xs px-2.5 py-1.5 rounded bg-[#0A0D15] border border-[#182032]"
                           >
                             <span className="font-medium text-slate-200">
                               {arch.archetype}
                             </span>
-                            {arch.sample_copies != null && (
-                              <span className="font-mono-tech text-[11px] text-[#C8AA6E]">
-                                {arch.sample_copies}x nella lista
-                              </span>
-                            )}
+                            <span className="font-mono-tech text-[11px] text-[#C8AA6E] text-right">
+                              {archetypeUsageLabel(arch)}
+                            </span>
                           </div>
                         ))}
                       </div>

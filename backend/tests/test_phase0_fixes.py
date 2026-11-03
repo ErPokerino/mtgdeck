@@ -23,7 +23,6 @@ from app.models import (
     MetaCardStat,
     MetaSnapshot,
 )
-from app.services import meta_scraper
 from app.services.deck_validator import (
     castable_mana_value,
     castable_with_colors,
@@ -291,30 +290,6 @@ def test_invented_matchup_counts_are_cleared(db):
     db.commit()
     assert clear_synthetic_matchup_counts(db) == 1
     assert db.query(MetaMatchup).one().matches_count == 0
-
-
-def fake_mtgdecks(rows):
-    cells = "".join(
-        "<tr><td>#</td><td>{}</td><td>{}</td><td>x</td><td>A</td><td>{}</td><td>x</td><td>100</td></tr>".format(*r)
-        for r in rows
-    )
-    html = "<table><tr><th>h</th></tr>" + cells + "</table>" + " " * 20000
-    return SimpleNamespace(status_code=200, text=html)
-
-
-def test_mtgdecks_rows_without_numbers_are_skipped_not_invented(monkeypatch):
-    rows = [(f"Deck {i}", "10%", "52%") for i in range(6)] + [("Broken", "n/a", "")]
-    monkeypatch.setattr(meta_scraper.creq, "get", lambda *a, **k: fake_mtgdecks(rows))
-    total, archetypes = meta_scraper._scrape_mtgdecks_live_sync("modern")
-    assert total == 0
-    assert [a["name"] for a in archetypes] == [f"Deck {i}" for i in range(6)]
-
-
-def test_unrecognised_mtgdecks_layout_fails_the_sync(monkeypatch):
-    rows = [("Only", "n/a", "")] * 6
-    monkeypatch.setattr(meta_scraper.creq, "get", lambda *a, **k: fake_mtgdecks(rows))
-    with pytest.raises(RuntimeError, match="layout"):
-        meta_scraper._scrape_mtgdecks_live_sync("modern")
 
 
 def test_cross_site_writes_are_rejected():

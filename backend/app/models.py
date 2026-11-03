@@ -133,6 +133,12 @@ class MetaSnapshot(Base):
     fetched_at = Column(DateTime(timezone=True), default=utcnow, index=True)
     total_decks_analyzed = Column(Integer, default=0)
     notes = Column(Text, nullable=True)
+    # Quality of the snapshot: what the AI and the UI can trust.
+    period_label = Column(String(64), nullable=True)  # es. "Last 2 Months"
+    coverage_pct = Column(Float, nullable=True)  # quota del meta coperta da archetipi con liste
+    decklists_count = Column(Integer, nullable=True)  # liste complete usate per le statistiche
+    quality_status = Column(String(16), nullable=True)  # "ok" | "degraded"
+    quality_warnings = Column(JSON, nullable=True)
 
     archetypes = relationship(
         "MetaArchetype", back_populates="snapshot", cascade="all, delete-orphan"
@@ -165,15 +171,92 @@ class MetaArchetype(Base):
     colors = Column(JSON, default=list)
     color_name = Column(String(64), nullable=True)  # es. "Dimir", "Boros", "Jund"
     meta_share_pct = Column(Float, default=0.0)
-    winrate_pct = Column(Float, default=50.0)
-    matches_count = Column(Integer, default=0)
+    winrate_pct = Column(Float, nullable=True)  # None: nessuna fonte di winrate osservato
+    matches_count = Column(Integer, default=0)  # mazzi dell'archetipo nel periodo della fonte
     key_cards = Column(JSON, default=list)  # nomi 4-6 carte simbolo
     sample_decklists = Column(
         JSON, default=list
     )  # 1-3 decklist campione reali [{"name", "pilot", "event", "main", "side"}]
     source_url = Column(String(512), nullable=True)
+    source_archetype_id = Column(String(32), nullable=True)
+    decklist_ids = Column(JSON, nullable=True)  # TournamentDecklist.id complete usate
+    decklists_count = Column(Integer, nullable=True)
 
     snapshot = relationship("MetaSnapshot", back_populates="archetypes")
+    cards = relationship(
+        "MetaArchetypeCard", back_populates="archetype", cascade="all, delete-orphan"
+    )
+
+
+class TournamentDecklist(Base):
+    """Persistent cache of tournament lists: a deck is downloaded once and reused by later syncs."""
+
+    __tablename__ = "tournament_decklists"
+    __table_args__ = (
+        UniqueConstraint("source", "source_deck_id", name="uq_tournament_deck_source"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source = Column(String(32), nullable=False)  # "mtgtop8"
+    source_deck_id = Column(String(64), nullable=False)
+    format_id = Column(String(32), nullable=False, index=True)
+    source_archetype_id = Column(String(32), nullable=True, index=True)
+    archetype_name = Column(String(128), nullable=True)
+    deck_title = Column(String(255), nullable=True)
+    pilot = Column(String(128), nullable=True)
+    event_name = Column(String(255), nullable=True)
+    placement = Column(String(32), nullable=True)
+    played_on = Column(String(10), nullable=True, index=True)  # ISO yyyy-mm-dd
+    cards = Column(JSON, default=list)  # [{"oracle_id","card_name","board","quantity"}]
+    raw_text = Column(Text, nullable=True)
+    is_complete = Column(Boolean, default=False, nullable=False)
+    issues = Column(JSON, default=list)
+    fetched_at = Column(DateTime(timezone=True), default=utcnow)
+
+
+class MetaArchetypeCard(Base):
+    """Observed card usage inside one archetype's collected lists."""
+
+    __tablename__ = "meta_archetype_cards"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    snapshot_id = Column(
+        Integer,
+        ForeignKey("meta_snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    archetype_id = Column(
+        Integer,
+        ForeignKey("meta_archetypes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    oracle_id = Column(String(64), nullable=False, index=True)
+    card_name = Column(String(255), nullable=False)
+    lists_count = Column(Integer, nullable=False)
+    main_inclusion_pct = Column(Float, default=0.0)
+    main_avg_copies = Column(Float, default=0.0)  # media sulle liste che la giocano in main
+    side_inclusion_pct = Column(Float, default=0.0)
+    side_avg_copies = Column(Float, default=0.0)
+
+    archetype = relationship("MetaArchetype", back_populates="cards")
+
+
+class CardRuling(Base):
+    __tablename__ = "card_rulings"
+
+    oracle_id = Column(String(64), primary_key=True)
+    rulings = Column(JSON, default=list)  # [{"published_at","source","comment"}]
+
+
+class CardTag(Base):
+    """Functional Scryfall Tagger tags (removal, counterspell, draw...) per Oracle identity."""
+
+    __tablename__ = "card_tags"
+
+    oracle_id = Column(String(64), primary_key=True)
+    tag = Column(String(64), primary_key=True, index=True)
 
 
 class MetaMatchup(Base):
