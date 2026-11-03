@@ -29,6 +29,10 @@ Al primo avvio vengono creati database e catalogo. La sincronizzazione iniziale 
 - **Guide salvate**: ogni generazione conserva una versione indipendente con la lista analizzata, modello, data e contesto. Anche le liste incollate hanno una guida archiviata. Puoi leggere ed esportare ogni versione in PDF con indice navigabile, lista, piani e tabelle di sidata.
 - Modificare le carte o il formato rende la guida precedente uno storico; non la presenta come aggiornata. Eliminare un mazzo elimina le sue revisioni, ma mantiene le guide e le rispettive liste.
 
+L’export PDF è illustrato anche per le versioni già salvate: lista testuale e griglia completa main/side con quantità, immagini in tutte le mani di esempio e in ogni scheda carta. Le schede delle vere carte a doppia faccia mostrano anche il retro disponibile. Il formato usa copertina con riepilogo, indice navigabile di soli capitoli, intestazioni di sezione e tabelle che continuano correttamente su più pagine.
+
+Le immagini ufficiali in risoluzione normale vengono scaricate da Scryfall e conservate in `data/cache/pdf-card-images`; i download falliti non vengono memorizzati e saranno riprovati all’export successivo. In assenza di un’immagine il riquadro riporta esplicitamente il nome della carta. Riscaricare un PDF applica il nuovo stile alla guida esistente, senza nuove chiamate AI.
+
 Il database predefinito è `data/mtgdeck.db`, nel server dell'app, **non nel cloud del browser**. Conserva mazzi, guide, revisioni e impostazioni (compresa la chiave provider inserita nella UI). Non pubblicarlo. Per un backup coerente usa SQLite `.backup` oppure arresta l'app prima di copiare il database. Puoi configurare `DATABASE_URL`; per PostgreSQL occorre installare il driver appropriato. Il deployment multiutente e l'autenticazione non sono implementati: il servizio è progettato come workbench personale.
 
 ## Legalità e qualità delle analisi

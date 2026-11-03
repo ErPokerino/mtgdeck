@@ -3,13 +3,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import GuideVersion, Card
 from app.services.guide_quality import reflection_copy_errors
-from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
-from urllib.parse import urlparse
-import httpx
-from io import BytesIO
-from PIL import Image as PILImage
-from app.config import settings
+from app.services.guide_images import load_guide_images
 from app.services.guide_pdf import render_guide_pdf
 
 router = APIRouter(prefix="/api/guides", tags=["Guide library"])
@@ -57,31 +51,6 @@ def reviewed_guide(db, version):
     return guide, cards
 
 
-@lru_cache(maxsize=256)
-def fetch_card_image(url):
-    parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname != "cards.scryfall.io":
-        return None
-    try:
-        with httpx.Client(
-            timeout=4,
-            follow_redirects=False,
-            headers={"User-Agent": settings.scryfall_user_agent, "Accept": "image/*"},
-        ) as client:
-            r = client.get(url)
-            if (
-                r.status_code == 200
-                and r.headers.get("content-type", "").startswith("image/")
-                and len(r.content) < 2_000_000
-            ):
-                with PILImage.open(BytesIO(r.content)) as image:
-                    image.verify()
-                return r.content
-    except (httpx.HTTPError, OSError, ValueError):
-        pass
-    return None
-
-
 def get_version(db, guide_id):
     version = db.get(GuideVersion, guide_id)
     if not version:
@@ -107,27 +76,7 @@ def get_guide(guide_id: int, db: Session = Depends(get_db)):
 def export_guide_pdf(guide_id: int, db: Session = Depends(get_db)):
     g = get_version(db, guide_id)
     guide, cards = reviewed_guide(db, g)
-    selected = [r.get("card_name", "") for r in guide.get("card_roles", [])[:3]]
-    examples = guide.get("mulligan_examples", [])
-    if examples:
-        selected.extend(examples[0].get("hand_cards", []))
-    selected = {n.casefold().split(" // ")[0] for n in selected}
-    urls = {}
-    for card in cards.values():
-        name = card.name.casefold().split(" // ")[0]
-        if name in selected:
-            uris = card.image_uris or {}
-            faces = card.card_faces or []
-            url = (
-                uris.get("small")
-                or uris.get("normal")
-                or (faces[0].get("image_uris", {}).get("small") if faces else None)
-            )
-            if url:
-                urls[name] = url
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        images = dict(zip(urls, pool.map(fetch_card_image, urls.values())))
-    images = {k: v for k, v in images.items() if v}
+    images = load_guide_images(cards.values())
     return Response(
         render_guide_pdf(guide, g.deck_name, g.format_id, g.deck_snapshot, images),
         media_type="application/pdf",
