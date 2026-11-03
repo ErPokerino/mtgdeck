@@ -12,6 +12,8 @@ interface ResizableSplitPaneProps {
   leftPane?: React.ReactNode;
   rightPane?: React.ReactNode;
   className?: string;
+  /** Below `lg` the panes are stacked: with labels, show one at a time behind tabs. */
+  mobileTabs?: { first: string; second: string };
 }
 
 export const ResizableSplitPane: React.FC<ResizableSplitPaneProps> = ({
@@ -25,10 +27,12 @@ export const ResizableSplitPane: React.FC<ResizableSplitPaneProps> = ({
   leftPane,
   rightPane,
   className = "",
+  mobileTabs,
 }) => {
   const firstNode = left ?? leftPane;
   const secondNode = right ?? rightPane;
   const containerRef = useRef<HTMLDivElement>(null);
+  const [mobilePane, setMobilePane] = useState<"first" | "second">("first");
   const [leftPct, setLeftPct] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(`split_${storageKey}`);
@@ -103,12 +107,43 @@ export const ResizableSplitPane: React.FC<ResizableSplitPaneProps> = ({
   }, [isDragging, direction, savePct]);
 
   const isHoriz = direction === "horizontal";
+  const tabbed = isHoriz && !!mobileTabs;
+  const paneVisibility = (pane: "first" | "second") =>
+    tabbed
+      ? mobilePane === pane
+        ? "max-lg:flex-1 max-lg:min-h-0"
+        : "max-lg:hidden"
+      : "";
 
   return (
     <div
       ref={containerRef}
       className={`flex ${isHoriz ? "flex-col lg:flex-row" : "flex-col"} w-full ${className}`}
     >
+      {tabbed && (
+        <div
+          role="tablist"
+          aria-label="Sezioni"
+          className="lg:hidden shrink-0 grid grid-cols-2 gap-1 p-1.5 bg-[#0E131D] border-b border-[#1E2638]"
+        >
+          {(["first", "second"] as const).map((pane) => (
+            <button
+              key={pane}
+              type="button"
+              role="tab"
+              aria-selected={mobilePane === pane}
+              onClick={() => setMobilePane(pane)}
+              className={`min-h-11 rounded-lg text-sm font-semibold cursor-pointer ${
+                mobilePane === pane
+                  ? "bg-[#1C2539] text-[#F3E5C8] border border-[#C8AA6E]/50"
+                  : "text-slate-300 border border-transparent"
+              }`}
+            >
+              {mobileTabs![pane]}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Left / Top Pane */}
       <div
         style={
@@ -116,7 +151,7 @@ export const ResizableSplitPane: React.FC<ResizableSplitPaneProps> = ({
             ? { width: `calc(${leftPct}% - 6px)` }
             : { height: `calc(${leftPct}% - 6px)` }
         }
-        className={`${isHoriz ? "max-lg:!w-full" : ""} min-w-0 shrink-0 transition-[width,height] duration-75 ease-out`}
+        className={`${isHoriz ? "max-lg:!w-full" : ""} ${paneVisibility("first")} min-w-0 shrink-0 transition-[width,height] duration-75 ease-out`}
       >
         {firstNode}
       </div>
@@ -125,8 +160,28 @@ export const ResizableSplitPane: React.FC<ResizableSplitPaneProps> = ({
       <div
         onMouseDown={() => setIsDragging(true)}
         onDoubleClick={() => savePct(defaultLeftPct)}
+        onKeyDown={(e) => {
+          const step = e.shiftKey ? 10 : 2;
+          if (e.key === (isHoriz ? "ArrowLeft" : "ArrowUp")) {
+            e.preventDefault();
+            savePct(leftPct - step);
+          } else if (e.key === (isHoriz ? "ArrowRight" : "ArrowDown")) {
+            e.preventDefault();
+            savePct(leftPct + step);
+          } else if (e.key === "Home") {
+            e.preventDefault();
+            savePct(defaultLeftPct);
+          }
+        }}
+        tabIndex={0}
+        role="separator"
+        aria-orientation={isHoriz ? "vertical" : "horizontal"}
+        aria-valuenow={Math.round(leftPct)}
+        aria-valuemin={minLeftPct}
+        aria-valuemax={maxLeftPct}
+        aria-label="Ridimensiona i riquadri (frecce, Home per ripristinare)"
         title="Trascina per ridimensionare i riquadri (Doppio click per ripristinare)"
-        className={`group relative flex items-center justify-center shrink-0 select-none ${
+        className={`group relative flex items-center justify-center shrink-0 select-none focus-visible:outline-2 focus-visible:outline-[#C8AA6E] ${
           isHoriz
             ? "hidden lg:flex w-3 cursor-col-resize mx-0.5 self-stretch"
             : "h-3 cursor-row-resize my-0.5 w-full"
@@ -161,7 +216,7 @@ export const ResizableSplitPane: React.FC<ResizableSplitPaneProps> = ({
         {isHoriz && (
           <div
             onMouseDown={(e) => e.stopPropagation()}
-            className="opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity absolute top-2 z-30 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-[#0D111A]/95 border border-[#2B3856] shadow-xl text-[9px] font-mono-tech text-slate-300"
+            className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto transition-opacity absolute top-2 z-30 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-[#0D111A]/95 border border-[#2B3856] shadow-xl text-[9px] font-mono-tech text-slate-300"
           >
             <button
               type="button"
@@ -196,7 +251,7 @@ export const ResizableSplitPane: React.FC<ResizableSplitPaneProps> = ({
             ? { width: `calc(${100 - leftPct}% - 6px)` }
             : { height: `calc(${100 - leftPct}% - 6px)` }
         }
-        className={`${isHoriz ? "max-lg:!w-full" : ""} min-w-0 flex-1 transition-[width,height] duration-75 ease-out`}
+        className={`${isHoriz ? "max-lg:!w-full" : ""} ${paneVisibility("second")} min-w-0 flex-1 transition-[width,height] duration-75 ease-out`}
       >
         {secondNode}
       </div>

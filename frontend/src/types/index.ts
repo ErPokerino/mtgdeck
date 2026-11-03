@@ -38,17 +38,19 @@ export interface FormatDetail extends FormatInfo {
   banned_cards: BannedCardInfo[];
 }
 
+/** Archetypes whose reference list contains the card, with the copies observed there. */
+export interface CardArchetypeUsage {
+  archetype: string;
+  sample_copies?: number;
+}
+
 export interface CardMetaInfo {
   overall_presence_pct: number;
   main_presence_pct: number;
   main_avg_copies: number;
   side_presence_pct: number;
   side_avg_copies: number;
-  top_archetypes: Array<{
-    archetype: string;
-    presence_pct: number;
-    avg_copies: number;
-  }>;
+  top_archetypes: CardArchetypeUsage[];
 }
 
 export interface CardFace {
@@ -246,11 +248,7 @@ export interface MetaTopCardInfo {
   main_avg_copies: number;
   side_presence_pct: number;
   side_avg_copies: number;
-  top_archetypes: Array<{
-    archetype: string;
-    presence_pct: number;
-    avg_copies: number;
-  }>;
+  top_archetypes: CardArchetypeUsage[];
   card?: Card | null;
 }
 
@@ -266,7 +264,14 @@ export interface FormatMetaResponse {
   archetypes: MetaArchetypeInfo[];
   matchup_matrix: Record<
     string,
-    Record<string, { winrate_pct: number; matches_count: number }>
+    Record<
+      string,
+      {
+        winrate_pct: number;
+        matches_count: number;
+        estimate_kind?: "observed" | "heuristic";
+      }
+    >
   >;
   top_cards: MetaTopCardInfo[];
 }

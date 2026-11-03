@@ -1,5 +1,7 @@
 import asyncio
+import logging
 import re
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 from bs4 import BeautifulSoup
 from curl_cffi import requests as creq
@@ -165,8 +167,10 @@ def _scrape_mtgdecks_live_sync(format_id: str) -> Tuple[int, List[Dict[str, Any]
     soup = BeautifulSoup(resp.text, "lxml")
     page_text = soup.get_text(" ", strip=True)
     m_tot = re.search(r"(\d+)\s+DECKS\s+SELECTED", page_text, re.I)
-    total_decks = int(m_tot.group(1)) if m_tot else 2000
+    total_decks = int(m_tot.group(1)) if m_tot else 0
 
+    # Rows missing share or winrate are skipped, never filled with plausible defaults:
+    # a layout change must surface as a failed sync, not as invented metagame numbers.
     archetypes: List[Dict[str, Any]] = []
     for tr in soup.select("table tr")[1:]:
         tds = [td.get_text(" ", strip=True) for td in tr.find_all("td")]
@@ -190,19 +194,22 @@ def _scrape_mtgdecks_live_sync(format_id: str) -> Tuple[int, List[Dict[str, Any]
 
         # Meta share (es. '10% 9.64%' -> 9.64)
         share_matches = re.findall(r"(\d+(?:\.\d+)?)\s*%", tds[2])
-        meta_share_pct = float(share_matches[-1]) if share_matches else 1.0
+        # Winrate (es. '53%' -> 53.0)
+        wr_matches = re.findall(r"(\d+(?:\.\d+)?)\s*%", tds[5])
+        if not share_matches or not wr_matches:
+            continue
+        meta_share_pct = float(share_matches[-1])
+        winrate_pct = float(wr_matches[0])
+        if not (0 < meta_share_pct <= 100 and 0 <= winrate_pct <= 100):
+            continue
 
         # Tier ('A' -> 1, 'B' -> 2, 'C' -> 3)
         tier_str = tds[4].strip().upper()
         tier = 1 if tier_str == "A" else (2 if tier_str == "B" else 3)
 
-        # Winrate (es. '53%' -> 53.0)
-        wr_matches = re.findall(r"(\d+(?:\.\d+)?)\s*%", tds[5])
-        winrate_pct = float(wr_matches[0]) if wr_matches else 50.0
-
         # Decks count (es. '189' -> 189)
         cnt_matches = re.findall(r"\d+", tds[7].replace(",", ""))
-        decks_count = int(cnt_matches[0]) if cnt_matches else 50
+        decks_count = int(cnt_matches[0]) if cnt_matches else 0
 
         # Colori dalle icone mana (<span class="ms ms-cost ms-b ms-shadow">)
         raw_cols: List[str] = []
@@ -232,6 +239,12 @@ def _scrape_mtgdecks_live_sync(format_id: str) -> Tuple[int, List[Dict[str, Any]
         if len(archetypes) >= 12:
             break
 
+    share_sum = sum(a["meta_share_pct"] for a in archetypes)
+    if len(archetypes) < 5 or not 15 <= share_sum <= 101:
+        raise RuntimeError(
+            f"Tabella metagame di MTGDecks non riconosciuta ({len(archetypes)} archetipi, "
+            f"quote {share_sum:.1f}%): il layout del sito potrebbe essere cambiato."
+        )
     return total_decks, archetypes
 
 
@@ -308,6 +321,7 @@ def _scrape_mtgtop8_live_sync(
             return []
 
     used_deck_ids = set()
+    sample_copies: Dict[str, Dict[str, int]] = {}
 
     for arch in live_archetypes:
         aname_low = arch["name"].lower()
@@ -357,14 +371,16 @@ def _scrape_mtgtop8_live_sync(
                     except UnicodeDecodeError:
                         raw_deck_str = rd.content.decode("latin-1", errors="replace")
 
-                    entries, _ = parse_decklist_text(db, raw_deck_str)
+                    entries, unresolved = parse_decklist_text(db, raw_deck_str)
                     legal_entries = [
                         (c, b, q)
                         for c, b, q in entries
                         if getattr(c, f"legality_{format_id}", "not_legal") == "legal"
                     ]
                     main_cnt = sum(q for _, b, q in legal_entries if b == "main")
-                    if main_cnt < 50:
+                    # A reference list must be complete: dropping unknown or no-longer-legal
+                    # cards silently produced 56-card "tournament" lists.
+                    if unresolved or len(legal_entries) != len(entries) or main_cnt < 60:
                         continue
 
                     card_names_low = {
@@ -435,6 +451,9 @@ def _scrape_mtgtop8_live_sync(
         if best_candidate:
             dtitle, did, pilot, ev_full, legal_entries = best_candidate
             used_deck_ids.add(did)
+            copies = sample_copies.setdefault(arch["name"], {})
+            for c_obj, _, qty in legal_entries:
+                copies[c_obj.oracle_id] = copies.get(c_obj.oracle_id, 0) + qty
             _, mtgo_text = export_decklist_formats(legal_entries)
             clean_text = "Deck\n" + mtgo_text
             arch["sample_decklists"].append(
@@ -568,44 +587,20 @@ def _scrape_mtgtop8_live_sync(
             continue
         seen_oracle_ids.add(card_obj.oracle_id)
 
-        md_pct, md_avg = md_cards.get(cname, all_cards.get(cname, (0.0, 0.0)))
+        md_pct, md_avg = md_cards.get(cname, (0.0, 0.0))
         sb_pct, sb_avg = sb_cards.get(cname, (0.0, 0.0))
-        overall_pct = round(min(99.0, max(md_pct, sb_pct, md_pct + sb_pct * 0.35)), 1)
+        # MTGTop8's combined page is the only observed overall figure; otherwise the larger
+        # board share is a lower bound. No synthetic blend of the two.
+        overall_pct = round(all_cards.get(cname, (max(md_pct, sb_pct), 0.0))[0], 1)
+        if not md_pct and cname in all_cards:
+            md_pct, md_avg = all_cards[cname]
 
-        # Associa gli archetipi che giocano questa carta (controllando le decklist scaricate o i colori)
+        # Only archetypes whose reference list actually contains the card, with the copies observed.
         playing_archs: List[Dict[str, Any]] = []
         for arch in live_archetypes:
-            found_in_list = False
-            for sd in arch.get("sample_decklists", []):
-                if card_obj.name.lower() in sd["decklist_text"].lower():
-                    found_in_list = True
-                    break
-            if found_in_list:
-                playing_archs.append(
-                    {
-                        "archetype": arch["name"],
-                        "presence_pct": round(
-                            min(98.0, max(65.0, overall_pct * 1.8)), 1
-                        ),
-                        "avg_copies": round(md_avg if md_avg > 0 else sb_avg, 1),
-                    }
-                )
-        if not playing_archs:
-            c_cols = set(card_obj.color_identity or [])
-            for arch in live_archetypes[:6]:
-                a_cols = set(arch.get("colors") or [])
-                if not c_cols or c_cols.issubset(a_cols):
-                    playing_archs.append(
-                        {
-                            "archetype": arch["name"],
-                            "presence_pct": round(
-                                min(92.0, max(55.0, overall_pct * 1.5)), 1
-                            ),
-                            "avg_copies": round(md_avg if md_avg > 0 else sb_avg, 1),
-                        }
-                    )
-                if len(playing_archs) >= 3:
-                    break
+            copies = sample_copies.get(arch["name"], {}).get(card_obj.oracle_id)
+            if copies:
+                playing_archs.append({"archetype": arch["name"], "sample_copies": copies})
 
         top_cards_result.append(
             (
@@ -685,21 +680,9 @@ def _run_meta_sync_blocking(format_id: str) -> Dict[str, Any]:
     try:
         total_decks, live_archetypes = _scrape_mtgdecks_live_sync(fmt)
         top_cards = _scrape_mtgtop8_live_sync(db, fmt, live_archetypes)
+        # Archetypes without a complete reference list keep no key cards rather than
+        # borrowing popular cards of matching colours.
         matchups = _generate_matchups_from_live_archetypes(live_archetypes)
-
-        # Popola fallback key_cards se un archetipo minore non aveva una lista su MTGTop8
-        for arch in live_archetypes:
-            if not arch["key_cards"]:
-                arch_cols = set(arch["colors"] or [])
-                matching_top = [
-                    cname
-                    for cname, _, _, _, _, _, _ in top_cards
-                    if resolve_card_by_name(db, cname)
-                    and set(
-                        resolve_card_by_name(db, cname).color_identity or []
-                    ).issubset(arch_cols)
-                ]
-                arch["key_cards"] = matching_top[:5] or [c[0] for c in top_cards[:4]]
 
         snap = MetaSnapshot(
             format_id=fmt,
@@ -818,10 +801,31 @@ def _run_meta_sync_blocking(format_id: str) -> Dict[str, Any]:
         db.close()
 
 
+_sync_lock = threading.Lock()
+
+
+def _run_meta_sync_exclusive(format_id: str) -> Dict[str, Any]:
+    # Scheduler and manual syncs must not overlap and write duplicate snapshots.
+    if not _sync_lock.acquire(blocking=False):
+        return {
+            "status": "already_running",
+            "format_id": format_id,
+            "message": meta_state.message,
+        }
+    try:
+        return _run_meta_sync_blocking(format_id)
+    finally:
+        _sync_lock.release()
+
+
 async def run_meta_sync_for_format(format_id: str) -> Dict[str, Any]:
-    return await asyncio.to_thread(_run_meta_sync_blocking, format_id)
+    return await asyncio.to_thread(_run_meta_sync_exclusive, format_id)
 
 
 async def run_meta_sync_all() -> None:
     for fmt in ("standard", "pioneer", "modern"):
-        await run_meta_sync_for_format(fmt)
+        try:
+            await run_meta_sync_for_format(fmt)
+        except Exception:
+            # Already recorded in SyncLog; one failing format must not block the others.
+            logging.getLogger("uvicorn.error").exception("Meta sync %s failed", fmt)

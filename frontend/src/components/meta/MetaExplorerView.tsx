@@ -1057,9 +1057,12 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                                 key={aIdx}
                                 className="px-2 py-0.5 rounded bg-[#0A0D15] border border-[#222C42] text-[11px] text-slate-200 font-mono-tech"
                               >
-                                {arch.archetype}:{" "}
-                                <strong>{arch.avg_copies.toFixed(1)}x</strong> (
-                                {arch.presence_pct.toFixed(0)}%)
+                                {arch.archetype}
+                                {arch.sample_copies != null && (
+                                  <>
+                                    : <strong>{arch.sample_copies}x</strong>
+                                  </>
+                                )}
                               </span>
                             ))}
                           </div>

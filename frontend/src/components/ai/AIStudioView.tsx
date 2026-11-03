@@ -400,9 +400,11 @@ export function AIStudioView({
         deck_b_id: modeB === "saved" && deckB ? deckB : undefined,
         deck_b_text: modeB === "custom" ? textB : undefined,
         deck_b_name:
-          archetypes.find((a) => a.id === archB)?.name ||
-          decks.find((d) => d.id === deckB)?.name ||
-          "Mazzo B",
+          modeB === "meta"
+            ? archetypes.find((a) => a.id === archB)?.name || "Mazzo B"
+            : modeB === "saved"
+              ? decks.find((d) => d.id === deckB)?.name || "Mazzo B"
+              : "Lista incollata",
         model_id: modelId,
       });
       setMatchup(r);
@@ -710,7 +712,8 @@ export function AIStudioView({
             {runButton(genLoading, "Genera e salva mazzo")}
             <p className="text-xs text-slate-500">
               L’analisi può richiedere alcuni minuti. Puoi consultare altre
-              sezioni mentre il lavoro prosegue in questa sessione.
+              sezioni o formati: il risultato resta qui. Se ricarichi la pagina,
+              il mazzo comparirà comunque in Mazzi e guide.
             </p>
           </form>
           {genError && (

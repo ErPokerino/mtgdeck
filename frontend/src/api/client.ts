@@ -20,9 +20,11 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
     ...options,
   });
   if (!res.ok) {
-    let errText = `HTTP ${res.status}`;
+    // The body can be read only once: read text, then try to interpret it as JSON.
+    const raw = await res.text().catch(() => "");
+    let errText = raw || `HTTP ${res.status}`;
     try {
-      const data = await res.json();
+      const data = JSON.parse(raw);
       errText =
         typeof data.detail === "string"
           ? data.detail
@@ -32,7 +34,7 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
                 .join("; ")
             : JSON.stringify(data);
     } catch {
-      errText = await res.text();
+      /* not JSON: keep the raw text */
     }
     throw new Error(errText);
   }
@@ -46,6 +48,7 @@ export const api = {
 
   searchCards: (
     params: Record<string, string | number | boolean | undefined>,
+    signal?: AbortSignal,
   ) => {
     const sp = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
@@ -53,7 +56,9 @@ export const api = {
         sp.set(k, String(v));
       }
     });
-    return apiFetch<CardSearchResponse>(`/api/cards/search?${sp.toString()}`);
+    return apiFetch<CardSearchResponse>(`/api/cards/search?${sp.toString()}`, {
+      signal,
+    });
   },
 
   getCardDetail: (oracleId: string, formatId: FormatId) =>
@@ -99,7 +104,7 @@ export const api = {
       method: "DELETE",
     }),
 
-  analyzeDeck: (payload: any) =>
+  analyzeDeck: (payload: any, signal?: AbortSignal) =>
     apiFetch<{
       colors: string[];
       color_label: string;
@@ -109,6 +114,7 @@ export const api = {
     }>("/api/decks/analyze", {
       method: "POST",
       body: JSON.stringify(payload),
+      signal,
     }),
 
   importDeck: (payload: {

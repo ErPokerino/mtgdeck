@@ -261,7 +261,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                   {meta.top_archetypes && meta.top_archetypes.length > 0 && (
                     <div className="space-y-1.5">
                       <div className="text-[11px] font-semibold text-slate-300">
-                        Archetipi Principali che la giocano:
+                        Presente nelle liste di riferimento di:
                       </div>
                       <div className="space-y-1">
                         {meta.top_archetypes.map((arch, idx) => (
@@ -272,10 +272,11 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                             <span className="font-medium text-slate-200">
                               {arch.archetype}
                             </span>
-                            <span className="font-mono-tech text-[11px] text-[#C8AA6E]">
-                              {arch.avg_copies.toFixed(1)} copie medie (
-                              {arch.presence_pct.toFixed(0)}% dei mazzi)
-                            </span>
+                            {arch.sample_copies != null && (
+                              <span className="font-mono-tech text-[11px] text-[#C8AA6E]">
+                                {arch.sample_copies}x nella lista
+                              </span>
+                            )}
                           </div>
                         ))}
                       </div>

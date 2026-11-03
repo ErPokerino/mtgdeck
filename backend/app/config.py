@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,6 +35,12 @@ class Settings(BaseSettings):
         "MTGProAIWorkbench/1.0 (https://github.com/ErPokerino/mtgdeck)"
     )
     scryfall_rate_limit_ms: int = 110
+
+    # Origini browser ammesse oltre a quella che serve l'app (separate da virgola)
+    cors_origins: str = (
+        "http://127.0.0.1:5173,http://localhost:5173,"
+        "http://127.0.0.1:8090,http://localhost:8090"
+    )
 
     # Sync scheduling
     enable_scheduler: bool = True

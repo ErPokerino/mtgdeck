@@ -20,12 +20,14 @@ export function LibraryView({
   onPlaytest,
   onGuide,
   onDelete,
+  onRestored,
 }: {
   formatId: FormatId;
   onOpen: (d: DeckDetail) => void;
   onPlaytest: (d: DeckDetail) => void;
   onGuide: (d: DeckDetail) => void;
   onDelete: (id: number) => void;
+  onRestored: (d: DeckDetail) => void;
 }) {
   const [tab, setTab] = useState<"active" | "archived" | "guides">("active");
   const [decks, setDecks] = useState<DeckSummary[]>([]),
@@ -63,6 +65,17 @@ export function LibraryView({
     setError("");
     load();
   }, [formatId, tab]);
+  useEffect(() => {
+    if (!guide && !revisions && !pendingDelete) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (pendingDelete) setPendingDelete(null);
+      else if (revisions) setRevisions(null);
+      else setGuide(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [guide, revisions, pendingDelete]);
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError("");
@@ -144,7 +157,7 @@ export function LibraryView({
         <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
           {guides
             .filter((g) =>
-              g.deck_name.toLowerCase().includes(query.toLowerCase()),
+              (g.deck_name || "").toLowerCase().includes(query.toLowerCase()),
             )
             .map((g) => (
               <section className="panel space-y-4" key={g.id}>
@@ -229,7 +242,9 @@ export function LibraryView({
                 </p>
                 <p className="text-xs text-slate-400">
                   {new Date(d.updated_at).toLocaleString("it-IT")} ·{" "}
-                  {d.revision_count || 0} versioni · {d.guide_count || 0} guide
+                  {d.revision_count || 0}{" "}
+                  {d.revision_count === 1 ? "versione" : "versioni"} ·{" "}
+                  {d.guide_count || 0} {d.guide_count === 1 ? "guida" : "guide"}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -332,8 +347,9 @@ export function LibraryView({
             className="max-w-6xl mx-auto bg-[#0b101a] rounded-2xl p-5 md:p-8"
           >
             <button
-              className="btn-secondary sticky top-0 z-10 mb-5"
+              className="btn-secondary sticky top-0 z-10 mb-5 bg-[#0b101a] shadow-lg"
               onClick={() => setGuide(null)}
+              autoFocus
             >
               <X size={16} />
               Chiudi guida
@@ -390,8 +406,12 @@ export function LibraryView({
                   disabled={busy}
                   onClick={() =>
                     act(async () => {
-                      await api.restoreRevision(revisionDeck!, r.id);
+                      const restored = await api.restoreRevision(
+                        revisionDeck!,
+                        r.id,
+                      );
                       setRevisions(null);
+                      onRestored(restored);
                     })
                   }
                 >

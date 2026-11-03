@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  FilePlus2,
   FileUp,
   Filter,
   FolderOpen,
@@ -73,6 +74,34 @@ const CARD_TYPES = [
   "Battle",
 ];
 
+// Deck rows: devices with a mouse swap info for controls on hover or keyboard focus;
+// touch screens have no hover, so they always show the controls.
+// Classes are spelled out in full: Tailwind only generates classes it finds as literal text.
+const ROW_INFO =
+  "hidden [@media(hover:hover)]:flex [@media(hover:hover)]:group-hover:hidden [@media(hover:hover)]:group-focus-within:hidden items-center gap-1.5";
+const ROW_CONTROLS =
+  "flex [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover:flex [@media(hover:hover)]:group-focus-within:flex items-center gap-0.5";
+const ROW_BUTTON =
+  "p-1.5 min-w-6 min-h-6 flex items-center justify-center rounded bg-[#0B0E17] cursor-pointer";
+
+const manaValueOf = (cost: string) =>
+  (cost.match(/\{[^}]+\}/g) || []).reduce((sum, raw) => {
+    const first = raw.slice(1, -1).split("/")[0];
+    if (/^\d+$/.test(first)) return sum + Number(first);
+    return ["X", "Y", "Z"].includes(first) ? sum : sum + 1;
+  }, 0);
+
+// Split cards and Rooms carry the sum of both halves; each half is cast on its own.
+const castableManaValue = (card: Card) => {
+  if (card.layout === "split") {
+    const costs = (card.card_faces || [])
+      .map((f) => f.mana_cost || "")
+      .filter(Boolean);
+    if (costs.length) return Math.min(...costs.map(manaValueOf));
+  }
+  return card.cmc || 0;
+};
+
 const RARITIES = [
   { id: "", label: "Tutte le rarità" },
   { id: "common", label: "Common" },
@@ -115,7 +144,8 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
   // --- Search Results State ---
   const [searchResults, setSearchResults] = useState<Card[]>([]);
   const [totalCards, setTotalCards] = useState(0);
-  const [searching, setSearching] = useState(false);
+  const [searching, setSearching] = useState(true);
+  const [searchedOnce, setSearchedOnce] = useState(false);
   const [inspectedCard, setInspectedCard] = useState<Card | null>(null);
 
   const [draft] = useState<any>(() => {
@@ -273,40 +303,49 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  // Execute Card Search
+  // Execute Card Search. Only the latest request may update results: older ones are aborted.
+  const searchAbort = useRef<AbortController | null>(null);
   const executeSearch = useCallback(async () => {
+    searchAbort.current?.abort();
+    const controller = new AbortController();
+    searchAbort.current = controller;
     setSearching(true);
     try {
       const combinedType = [selectedType, subtypeQuery.trim()]
         .filter(Boolean)
         .join(" ");
-      const res = await api.searchCards({
-        format_id: formatId,
-        q: nameQuery.trim() || undefined,
-        oracle_q: oracleQuery.trim() || undefined,
-        set_code: selectedSet || undefined,
-        colors:
-          selectedColors.length > 0 ? selectedColors.join(",") : undefined,
-        color_mode: colorMode,
-        cmc_exact: cmcExact !== null ? cmcExact : undefined,
-        cmc_min: cmcMin !== "" ? Number(cmcMin) : undefined,
-        cmc_max: cmcMax !== "" ? Number(cmcMax) : undefined,
-        power_min: powerMin !== "" ? Number(powerMin) : undefined,
-        power_max: powerMax !== "" ? Number(powerMax) : undefined,
-        toughness_min: toughnessMin !== "" ? Number(toughnessMin) : undefined,
-        toughness_max: toughnessMax !== "" ? Number(toughnessMax) : undefined,
-        rarity: selectedRarity || undefined,
-        card_type: combinedType || undefined,
-        sort_by: sortBy,
-        page,
-        page_size: 36,
-      });
+      const res = await api.searchCards(
+        {
+          format_id: formatId,
+          q: nameQuery.trim() || undefined,
+          oracle_q: oracleQuery.trim() || undefined,
+          set_code: selectedSet || undefined,
+          colors:
+            selectedColors.length > 0 ? selectedColors.join(",") : undefined,
+          color_mode: colorMode,
+          cmc_exact: cmcExact !== null ? cmcExact : undefined,
+          cmc_min: cmcMin !== "" ? Number(cmcMin) : undefined,
+          cmc_max: cmcMax !== "" ? Number(cmcMax) : undefined,
+          power_min: powerMin !== "" ? Number(powerMin) : undefined,
+          power_max: powerMax !== "" ? Number(powerMax) : undefined,
+          toughness_min: toughnessMin !== "" ? Number(toughnessMin) : undefined,
+          toughness_max: toughnessMax !== "" ? Number(toughnessMax) : undefined,
+          rarity: selectedRarity || undefined,
+          card_type: combinedType || undefined,
+          sort_by: sortBy,
+          page,
+          page_size: 36,
+        },
+        controller.signal,
+      );
       setSearchResults(res.cards);
       setTotalCards(res.total);
+      setSearchedOnce(true);
     } catch (err) {
+      if (controller.signal.aborted) return;
       console.error("Search error:", err);
     } finally {
-      setSearching(false);
+      if (searchAbort.current === controller) setSearching(false);
     }
   }, [
     formatId,
@@ -336,8 +375,9 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
     return () => clearTimeout(timer);
   }, [executeSearch]);
 
-  // Real-time Stateless Validation & Analytics whenever deckItems or formatId changes
+  // Real-time Stateless Validation & Analytics, debounced; a stale response never overwrites a newer one.
   useEffect(() => {
+    const controller = new AbortController();
     const payload = {
       name: deckName,
       format_id: formatId,
@@ -349,16 +389,24 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
         quantity: item.quantity,
       })),
     };
-    api
-      .analyzeDeck(payload)
-      .then((res) => {
-        setDeckColors(res.colors);
-        setColorLabel(res.color_label);
-        setValidation(res.validation);
-        setAnalytics(res.analytics);
-        setExportTexts(res.export);
-      })
-      .catch((err) => console.error("Analyze error:", err));
+    const timer = setTimeout(() => {
+      api
+        .analyzeDeck(payload, controller.signal)
+        .then((res) => {
+          setDeckColors(res.colors);
+          setColorLabel(res.color_label);
+          setValidation(res.validation);
+          setAnalytics(res.analytics);
+          setExportTexts(res.export);
+        })
+        .catch((err) => {
+          if (!controller.signal.aborted) console.error("Analyze error:", err);
+        });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [deckItems, formatId, deckName, deckArchetype]);
 
   // Reset all search filters
@@ -542,6 +590,13 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
   };
 
   const handleImportDeckText = async (text: string, importedName: string) => {
+    if (
+      dirty &&
+      !window.confirm(
+        "Importare la lista? Le modifiche non salvate della bozza corrente saranno sostituite.",
+      )
+    )
+      throw new Error("Importazione annullata: la bozza corrente è invariata.");
     const res = await api.importDeck({
       text,
       format_id: formatId,
@@ -611,7 +666,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
         if (frontType.includes("Land")) {
           groups["Terre"].push(item);
         } else {
-          const cmc = Math.floor(item.card.cmc || 0);
+          const cmc = Math.floor(castableManaValue(item.card));
           if (cmc <= 1) groups["CMC 0-1"].push(item);
           else if (cmc === 2) groups["CMC 2"].push(item);
           else if (cmc === 3) groups["CMC 3"].push(item);
@@ -643,13 +698,17 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
   const totalPages = Math.max(1, Math.ceil(totalCards / 36));
 
   return (
-    <div className="h-[calc(100vh-3.75rem)] overflow-hidden">
+    <div className="h-[calc(100dvh-var(--header-h,3.75rem))] overflow-hidden">
       <ResizableSplitPane
         storageKey="deckbuilder_main"
         defaultLeftPct={52}
         minLeftPct={25}
         maxLeftPct={75}
         className="h-full"
+        mobileTabs={{
+          first: "Cerca carte",
+          second: `Mazzo · ${validation.mainboard_count}/60 · ${validation.sideboard_count}/15`,
+        }}
         left={
           <div className="w-full h-full flex flex-col bg-[#0A0D14]">
             {/* Search & Filters Header */}
@@ -1028,10 +1087,13 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
             </div>
 
             {/* Card Grid */}
-            <div className="flex-1 overflow-y-auto p-3.5">
-              {searching && searchResults.length === 0 ? (
-                <div className="h-64 flex items-center justify-center text-xs text-slate-400">
-                  Ricerca carte nel database Scryfall FTS5...
+            <div className="flex-1 overflow-y-auto p-3.5" aria-busy={searching}>
+              {(searching || !searchedOnce) && searchResults.length === 0 ? (
+                <div
+                  className="h-64 flex items-center justify-center text-xs text-slate-400"
+                  role="status"
+                >
+                  Ricerca carte nel catalogo…
                 </div>
               ) : searchResults.length === 0 ? (
                 <div className="h-64 flex flex-col items-center justify-center text-center gap-2">
@@ -1046,7 +1108,9 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+                <div
+                  className={`grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 transition-opacity ${searching ? "opacity-60" : ""}`}
+                >
                   {searchResults.map((card) => {
                     const imgUrl =
                       card.image_uris?.normal ||
@@ -1105,29 +1169,32 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                               </div>
                             )}
 
-                          {/* Quick Action Overlay on Hover */}
+                          {/* Quick actions: always visible on touch screens, on hover or keyboard focus elsewhere */}
                           <div
-                            className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/95 via-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between gap-1"
+                            className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/95 via-black/80 to-transparent opacity-100 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-between gap-1"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <button
                               onClick={() => handleAddCard(card, "main", 1)}
-                              className="flex-1 py-1.5 rounded bg-[#C8AA6E] hover:bg-[#DFC286] text-[#090B10] font-bold text-[11px] flex items-center justify-center gap-0.5 cursor-pointer shadow"
+                              className="flex-1 min-h-7 py-1.5 rounded bg-[#C8AA6E] hover:bg-[#DFC286] text-[#090B10] font-bold text-[11px] flex items-center justify-center gap-0.5 cursor-pointer shadow"
                               title="Aggiungi 1 copia al Mainboard"
+                              aria-label={`Aggiungi ${card.name} al mainboard`}
                             >
                               <Plus className="w-3 h-3 stroke-[2.5]" /> Main
                             </button>
                             <button
                               onClick={() => handleAddCard(card, "side", 1)}
-                              className="flex-1 py-1.5 rounded bg-[#182236] hover:bg-[#22304C] text-sky-300 border border-sky-500/40 font-semibold text-[11px] flex items-center justify-center gap-0.5 cursor-pointer shadow"
+                              className="flex-1 min-h-7 py-1.5 rounded bg-[#182236] hover:bg-[#22304C] text-sky-300 border border-sky-500/40 font-semibold text-[11px] flex items-center justify-center gap-0.5 cursor-pointer shadow"
                               title="Aggiungi 1 copia alla Sideboard"
+                              aria-label={`Aggiungi ${card.name} alla sideboard`}
                             >
                               <Plus className="w-3 h-3" /> Side
                             </button>
                             <button
                               onClick={() => setInspectedCard(card)}
-                              className="p-1.5 rounded bg-[#141A29] hover:bg-[#1E273D] text-slate-200 border border-slate-600/40 cursor-pointer"
+                              className="p-1.5 min-h-7 rounded bg-[#141A29] hover:bg-[#1E273D] text-slate-200 border border-slate-600/40 cursor-pointer"
                               title="Info Carta & Statistiche Meta"
+                              aria-label={`Dettagli di ${card.name}`}
                             >
                               <Info className="w-3.5 h-3.5" />
                             </button>
@@ -1267,10 +1334,11 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   <button
                     type="button"
                     onClick={handleNewDeck}
-                    className="p-1.5 rounded-lg bg-[#131824] hover:bg-rose-950/60 border border-[#222B40] hover:border-rose-700/50 text-slate-400 hover:text-rose-200 cursor-pointer"
+                    className="p-1.5 rounded-lg bg-[#131824] hover:bg-[#1D273E] border border-[#222B40] text-slate-300 hover:text-[#F3E5C8] cursor-pointer"
                     title="Nuovo mazzo vuoto"
+                    aria-label="Nuovo mazzo vuoto"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <FilePlus2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
@@ -1485,9 +1553,11 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                     />
                                   )}
 
-                                  <div
+                                  <button
+                                    type="button"
                                     onClick={() => setInspectedCard(item.card)}
-                                    className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer"
+                                    className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer text-left"
+                                    title={item.card_name}
                                   >
                                     <span className="font-mono-tech font-bold text-xs text-[#F3E5C8] w-4 text-center">
                                       {item.quantity}x
@@ -1501,11 +1571,11 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                     >
                                       {item.card_name}
                                     </span>
-                                  </div>
+                                  </button>
 
-                                  {/* Right side: Meta % + ManaCost (hidden on hover) vs +/-/Side/Delete controls */}
+                                  {/* Right side: meta % + mana cost, swapped for the controls on hover/focus; touch screens always show controls */}
                                   <div className="flex items-center gap-1.5 shrink-0">
-                                    <div className="group-hover:hidden flex items-center gap-1.5">
+                                    <div className={ROW_INFO}>
                                       {item.card.meta_info &&
                                         item.card.meta_info
                                           .overall_presence_pct > 0 && (
@@ -1524,13 +1594,17 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                         size="xs"
                                       />
                                     </div>
-                                    <div className="hidden group-hover:flex items-center gap-0.5">
+                                    <div className={ROW_CONTROLS}>
                                       <button
                                         onClick={() =>
                                           handleAddCard(item.card, "main", -1)
                                         }
-                                        className="p-1 rounded bg-[#0B0E17] hover:bg-slate-700 text-slate-200 cursor-pointer"
+                                        className={
+                                          ROW_BUTTON +
+                                          " hover:bg-slate-700 text-slate-200"
+                                        }
                                         title="Rimuovi 1 copia"
+                                        aria-label={`Rimuovi una copia di ${item.card_name} dal mainboard`}
                                       >
                                         <Minus className="w-3 h-3" />
                                       </button>
@@ -1538,15 +1612,23 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                         onClick={() =>
                                           handleAddCard(item.card, "main", 1)
                                         }
-                                        className="p-1 rounded bg-[#0B0E17] hover:bg-[#C8AA6E] hover:text-black text-slate-200 cursor-pointer"
+                                        className={
+                                          ROW_BUTTON +
+                                          " hover:bg-[#C8AA6E] hover:text-black text-slate-200"
+                                        }
                                         title="Aggiungi 1 copia"
+                                        aria-label={`Aggiungi una copia di ${item.card_name} al mainboard`}
                                       >
                                         <Plus className="w-3 h-3" />
                                       </button>
                                       <button
                                         onClick={() => handleMoveBoard(item)}
-                                        className="p-1 rounded bg-[#0B0E17] hover:bg-sky-800 text-sky-300 cursor-pointer"
+                                        className={
+                                          ROW_BUTTON +
+                                          " hover:bg-sky-800 text-sky-300"
+                                        }
                                         title="Sposta in Sideboard"
+                                        aria-label={`Sposta ${item.card_name} in sideboard`}
                                       >
                                         <ArrowLeftRight className="w-3 h-3" />
                                       </button>
@@ -1557,8 +1639,12 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                             "main",
                                           )
                                         }
-                                        className="p-1 rounded bg-[#0B0E17] hover:bg-rose-800 text-rose-300 cursor-pointer"
+                                        className={
+                                          ROW_BUTTON +
+                                          " hover:bg-rose-800 text-rose-300"
+                                        }
                                         title="Elimina dal mazzo"
+                                        aria-label={`Elimina ${item.card_name} dal mainboard`}
                                       >
                                         <Trash2 className="w-3 h-3" />
                                       </button>
@@ -1596,9 +1682,11 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                             key={`${item.oracle_id}-side`}
                             className="group rounded-lg px-2 py-1.5 bg-[#111726] hover:bg-[#172034] border border-[#1E2942] flex items-center justify-between gap-2"
                           >
-                            <div
+                            <button
+                              type="button"
                               onClick={() => setInspectedCard(item.card)}
-                              className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer"
+                              className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer text-left"
+                              title={item.card_name}
                             >
                               <span className="font-mono-tech font-bold text-xs text-sky-300 w-4 text-center">
                                 {item.quantity}x
@@ -1606,20 +1694,25 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                               <span className="text-xs font-medium text-slate-200 truncate">
                                 {item.card_name}
                               </span>
-                            </div>
+                            </button>
                             <div className="flex items-center gap-1 shrink-0">
-                              <div className="group-hover:hidden">
+                              <div className={ROW_INFO}>
                                 <ManaCost
                                   cost={item.card.mana_cost}
                                   size="xs"
                                 />
                               </div>
-                              <div className="hidden group-hover:flex items-center gap-0.5">
+                              <div className={ROW_CONTROLS}>
                                 <button
                                   onClick={() =>
                                     handleAddCard(item.card, "side", -1)
                                   }
-                                  className="p-1 rounded bg-[#0B0E17] hover:bg-slate-700 text-slate-200 cursor-pointer"
+                                  className={
+                                    ROW_BUTTON +
+                                    " hover:bg-slate-700 text-slate-200"
+                                  }
+                                  title="Rimuovi 1 copia"
+                                  aria-label={`Rimuovi una copia di ${item.card_name} dalla sideboard`}
                                 >
                                   <Minus className="w-3 h-3" />
                                 </button>
@@ -1627,14 +1720,23 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                   onClick={() =>
                                     handleAddCard(item.card, "side", 1)
                                   }
-                                  className="p-1 rounded bg-[#0B0E17] hover:bg-sky-500 hover:text-black text-slate-200 cursor-pointer"
+                                  className={
+                                    ROW_BUTTON +
+                                    " hover:bg-sky-500 hover:text-black text-slate-200"
+                                  }
+                                  title="Aggiungi 1 copia"
+                                  aria-label={`Aggiungi una copia di ${item.card_name} alla sideboard`}
                                 >
                                   <Plus className="w-3 h-3" />
                                 </button>
                                 <button
                                   onClick={() => handleMoveBoard(item)}
-                                  className="p-1 rounded bg-[#0B0E17] hover:bg-amber-700 text-amber-300 cursor-pointer"
+                                  className={
+                                    ROW_BUTTON +
+                                    " hover:bg-amber-700 text-amber-300"
+                                  }
                                   title="Sposta in Mainboard"
+                                  aria-label={`Sposta ${item.card_name} nel mainboard`}
                                 >
                                   <ArrowLeftRight className="w-3 h-3" />
                                 </button>
@@ -1642,7 +1744,12 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                   onClick={() =>
                                     handleRemoveCard(item.oracle_id, item.board)
                                   }
-                                  className="p-1 rounded bg-[#0B0E17] hover:bg-rose-800 text-rose-300 cursor-pointer"
+                                  className={
+                                    ROW_BUTTON +
+                                    " hover:bg-rose-800 text-rose-300"
+                                  }
+                                  title="Elimina dalla sideboard"
+                                  aria-label={`Elimina ${item.card_name} dalla sideboard`}
                                 >
                                   <Trash2 className="w-3 h-3" />
                                 </button>
@@ -1714,7 +1821,13 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                           spells: 0,
                           total: 0,
                         };
-                        const maxBar = 20;
+                        // Scale to the tallest bucket so the shape of the curve is readable.
+                        const maxBar = Math.max(
+                          1,
+                          ...Object.values(analytics.mana_curve || {}).map(
+                            (b) => b.total,
+                          ),
+                        );
                         const creatH = Math.min(
                           100,
                           (data.creatures / maxBar) * 100,

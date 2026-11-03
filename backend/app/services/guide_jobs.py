@@ -2,8 +2,12 @@
 
 import hashlib
 import json
+import logging
 import threading
 import time
+
+import httpx
+from google.genai import errors as genai_errors
 from pydantic import ValidationError
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta, timezone
@@ -17,6 +21,12 @@ from app.services.guide_pipeline import GUIDE_BUDGET_SECONDS
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="guide")
 _lock = threading.Lock()
 _workers = set()
+
+
+def _is_provider_failure(exc: BaseException) -> bool:
+    if isinstance(exc, (TimeoutError, httpx.HTTPError, genai_errors.APIError)):
+        return True
+    return isinstance(exc, RuntimeError) and "output vuoto" in str(exc)
 
 
 def public_job(job):
@@ -238,8 +248,13 @@ def _work(job_id):
                         if str(exc).startswith("Guida non salvata:")
                         else str(exc)
                     )
-                else:
+                elif _is_provider_failure(exc):
                     job.error = "Il provider non ha completato la risposta nel tempo disponibile. Puoi riprovare dalla bozza, se già ricevuta."
+                else:
+                    logging.getLogger("uvicorn.error").exception(
+                        "guide job %s failed with an internal error", job_id
+                    )
+                    job.error = f"Errore interno ({type(exc).__name__}): la bozza già ricevuta resta disponibile. Dettagli nei log del backend."
                 job.finished_at = utcnow()
                 db.commit()
     finally:

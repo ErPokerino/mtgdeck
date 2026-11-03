@@ -1,6 +1,8 @@
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 from app.database import get_db
 from app.models import (
     Card,
@@ -19,10 +21,10 @@ from app.services.meta_scraper import run_meta_sync_all, run_meta_sync_for_forma
 router = APIRouter(prefix="/api/meta", tags=["Metagame"])
 
 
-@router.get("/{format_id}")
-async def get_format_meta(
+@router.get("/{format_id}", response_model=None)
+def get_format_meta(
     format_id: str, db: Session = Depends(get_db)
-) -> Dict[str, Any]:
+) -> Dict[str, Any] | JSONResponse:
     fmt = format_id.lower()
     if fmt not in ("standard", "pioneer", "modern"):
         raise HTTPException(status_code=400, detail=f"Formato non valido: {format_id}")
@@ -35,17 +37,13 @@ async def get_format_meta(
     )
 
     if not latest_snap:
-        await run_meta_sync_for_format(fmt)
-        latest_snap = (
-            db.query(MetaSnapshot)
-            .filter(MetaSnapshot.format_id == fmt)
-            .order_by(MetaSnapshot.fetched_at.desc())
-            .first()
-        )
-
-    if not latest_snap:
-        raise HTTPException(
-            503, "Metagame non disponibile. Riprova la sincronizzazione."
+        # A scrape takes minutes: start it in background instead of holding the request.
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "Metagame non ancora disponibile: sincronizzazione avviata, riprova tra qualche minuto."
+            },
+            background=BackgroundTask(run_meta_sync_for_format, fmt),
         )
 
     archetypes_q = (
@@ -107,6 +105,7 @@ async def get_format_meta(
     for m in matchups_q:
         if m.archetype_a_name not in matrix_map:
             matrix_map[m.archetype_a_name] = {}
+        # The scraper never collects head-to-head results: every cell is a heuristic estimate.
         matrix_map[m.archetype_a_name][m.archetype_b_name] = {
             "winrate_pct": m.winrate_a_pct,
             "matches_count": 0,

@@ -70,7 +70,7 @@ export function GuideReader({
           Versione salvata dopo i controlli di lista, sidate, copertura dei
           matchup e revisione Oracle
           {guide.quality_review.revision_count > 0 &&
-            ` · ${guide.quality_review.revision_count} cicli di correzione`}
+            ` · ${guide.quality_review.revision_count} ${guide.quality_review.revision_count === 1 ? "ciclo" : "cicli"} di correzione`}
           {guide.generated_at &&
             ` · ${new Date(guide.generated_at).toLocaleString("it-IT")}`}
           .

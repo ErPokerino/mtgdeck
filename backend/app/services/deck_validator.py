@@ -63,6 +63,17 @@ def resolve_card_by_name(db: Session, raw_name: str) -> Optional[Card]:
     for card in candidates:
         if normalize_card_name(card.name.split(" // ")[0]) == front:
             return card
+    if "/" in name and " // " not in name:
+        # MTGO writes split cards as "Fire/Ice".
+        halves = [h.strip() for h in name.split("/")]
+        if len(halves) == 2 and all(halves):
+            card = (
+                db.query(Card)
+                .filter(Card.normalized_name == f"{halves[0]} // {halves[1]}")
+                .first()
+            )
+            if card:
+                return card
     return (
         db.query(Card).filter(func.lower(Card.name) == raw_name.strip().lower()).first()
     )
@@ -158,6 +169,55 @@ def validate_deck_entries(format_id, entries) -> DeckValidationReport:
     )
 
 
+def mana_value_of(cost: str) -> float:
+    total = 0.0
+    for symbol in re.findall(r"\{([^}]+)\}", cost or ""):
+        first = symbol.split("/")[0]
+        if first.isdigit():
+            total += int(first)
+        elif first in ("X", "Y", "Z"):
+            continue
+        else:
+            total += 1
+    return total
+
+
+def castable_with_colors(card, colors) -> bool:
+    """True when the card (or at least one of its faces) can be cast using only `colors`.
+
+    Hybrid symbols need one allowed half, Phyrexian symbols can be paid with life.
+    Lands are always allowed: their colours are produced, not paid.
+    """
+    allowed = set(colors)
+    if "Land" in (card.type_line or "").split("//")[0]:
+        return True
+
+    def payable(cost: str) -> bool:
+        for symbol in re.findall(r"\{([^}]+)\}", cost or ""):
+            parts = symbol.split("/")
+            if "P" in parts or any(p.isdigit() for p in parts):
+                continue
+            colored = [p for p in parts if p in "WUBRG"]
+            if colored and not any(p in allowed for p in colored):
+                return False
+        return True
+
+    # Transformed back faces have no cost and are never cast: only faces with a cost count.
+    costs = [f["mana_cost"] for f in card.card_faces or [] if f.get("mana_cost")] or [
+        card.mana_cost or ""
+    ]
+    return any(payable(c) for c in costs)
+
+
+def castable_mana_value(card) -> float:
+    """Split cards and Rooms carry the sum of both halves; each half is cast on its own."""
+    if card.layout == "split":
+        costs = [f.get("mana_cost") for f in card.card_faces or [] if f.get("mana_cost")]
+        if costs:
+            return min(mana_value_of(c) for c in costs)
+    return float(card.cmc or 0)
+
+
 def compute_deck_analytics(entries) -> DeckAnalytics:
     curve = {
         key: {"creatures": 0, "spells": 0, "total": 0}
@@ -195,7 +255,7 @@ def compute_deck_analytics(entries) -> DeckAnalytics:
             lands += qty
         else:
             nonlands += qty
-            cmc = float(card.cmc or 0)
+            cmc = castable_mana_value(card)
             cmc_sum += cmc * qty
             bucket = "6+" if cmc >= 6 else str(max(0, int(cmc)))
             curve[bucket]["creatures" if "Creature" in front_type else "spells"] += qty
@@ -227,12 +287,14 @@ DECK_LINE = re.compile(
 
 
 def parse_decklist_text(db, raw_text):
-    board, seen_main = "main", False
+    board, main_count = "main", 0
     merged, unresolved = {}, []
     for raw_line in raw_text.splitlines():
         line = raw_line.strip()
         if not line:
-            if seen_main and board == "main":
+            # MTGO separates the sideboard with a blank line; sites also use blank lines
+            # to group the main deck by type, so only a complete main deck ends here.
+            if board == "main" and main_count >= 60:
                 board = "side"
             continue
         header = line.lower().rstrip(":")
@@ -267,7 +329,7 @@ def parse_decklist_text(db, raw_text):
             key = (card.oracle_id, target)
             merged[key] = (card, target, merged.get(key, (None, None, 0))[2] + qty)
         if target == "main":
-            seen_main = True
+            main_count += qty
         if board == "companion":
             board = "main"
     # Arena repeats the designated companion in the sideboard section. It is one card.
@@ -288,12 +350,20 @@ def export_decklist_formats(entries):
     companion = [(c, q) for c, b, q in entries if b == "companion" and q > 0]
 
     def line(c, q, arena=False):
-        name = c.name.split(" // ")[0]
-        return f"{q} {name}" + (
+        # Split cards (and Rooms) are named by both halves; DFCs and adventures by the front.
+        is_split = c.layout == "split" and " // " in c.name
+        if is_split:
+            name = c.name if arena else c.name.replace(" // ", "/")
+        else:
+            name = c.name.split(" // ")[0]
+        # The catalog keeps one representative printing: cite it only if it exists on Arena,
+        # otherwise Arena rejects or substitutes the line. A bare name always imports.
+        printing = (
             f" ({c.set_code.upper()}) {c.collector_number}"
-            if arena and c.set_code and c.collector_number
+            if arena and c.arena_id and c.set_code and c.collector_number
             else ""
         )
+        return f"{q} {name}{printing}"
 
     arena, mtgo = [], []
     if companion:

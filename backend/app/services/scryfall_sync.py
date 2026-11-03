@@ -11,7 +11,7 @@ import orjson
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.config import DATA_DIR, settings
-from app.database import SessionLocal, engine, init_fts5_index, is_sqlite
+from app.database import SessionLocal, init_fts5_index, is_sqlite
 from app.models import Card, Format, SetModel, SyncLog, utcnow
 
 WUBRG_ORDER = {"W": 0, "U": 1, "B": 2, "R": 3, "G": 4}
@@ -422,6 +422,52 @@ async def run_scryfall_sync(force_download: bool = False) -> Dict[str, Any]:
         db.close()
 
 
+def apply_set_legality(all_sets, set_counts: Dict[str, Dict[str, int]]) -> None:
+    """Indicative set flags; card legality is always checked per Oracle identity.
+
+    `set_counts[code]` counts cards whose representative printing is in that set
+    (`total`) and how many are legal in each format (`std`, `pio`, `mod`).
+    """
+    for s in all_sets:
+        counts = set_counts.get(s.code, {"total": 0, "std": 0, "pio": 0, "mod": 0})
+        tot = max(1, counts["total"])
+        if not s.digital and counts["total"] >= 15:
+            s.is_pioneer_legal = (
+                s.set_type in {"expansion", "core"} and (counts["pio"] / tot) >= 0.5
+            )
+            s.is_modern_legal = (
+                s.set_type in {"expansion", "core", "draft_innovation"}
+                and (counts["mod"] / tot) >= 0.5
+            )
+        else:
+            s.is_pioneer_legal = False
+            s.is_modern_legal = False
+        s.is_standard_legal = False
+
+    # Standard is a contiguous window of premier sets. Per-set ratios misfire on reprint
+    # sets because only one printing per card is kept: anchor the window on the oldest
+    # premier set that is almost entirely legal.
+    today = datetime.now(timezone.utc).date().isoformat()
+    premier = [
+        s
+        for s in all_sets
+        if s.set_type in {"expansion", "core"} and not s.digital and s.released_at
+    ]
+    anchors = [
+        s.released_at
+        for s in premier
+        if set_counts.get(s.code, {}).get("total", 0) >= 15
+        and set_counts[s.code]["std"] / set_counts[s.code]["total"] >= 0.8
+    ]
+    if anchors:
+        start = min(anchors)
+        for s in premier:
+            s.is_standard_legal = start <= s.released_at <= today
+    for s in all_sets:
+        if s.released_at and s.released_at > today:
+            s.is_standard_legal = s.is_pioneer_legal = s.is_modern_legal = False
+
+
 def _ingest_bulk_file_sync(bulk_file_path: Path) -> int:
     """Esegue il bulk upsert su SQLite e ricostruisce l'indice FTS5 e le legalità dei Set."""
     records: List[Dict[str, Any]] = []
@@ -518,26 +564,7 @@ def _ingest_bulk_file_sync(bulk_file_path: Path) -> int:
                 82.0 + (i / max(1, len(records))) * 12.0, 1
             )
 
-        # Aggiorna i flag di legalità sui Set principali (expansion, core, draft_innovation)
-        all_sets = db.query(SetModel).all()
-        for s in all_sets:
-            counts = set_counts.get(s.code, {"total": 0, "std": 0, "pio": 0, "mod": 0})
-            tot = max(1, counts["total"])
-            if not s.digital and counts["total"] >= 15:
-                s.is_standard_legal = (
-                    s.set_type in {"expansion", "core"} and (counts["std"] / tot) >= 0.5
-                )
-                s.is_pioneer_legal = (
-                    s.set_type in {"expansion", "core"} and (counts["pio"] / tot) >= 0.5
-                )
-                s.is_modern_legal = (
-                    s.set_type in {"expansion", "core", "draft_innovation"}
-                    and (counts["mod"] / tot) >= 0.5
-                )
-            else:
-                s.is_standard_legal = False
-                s.is_pioneer_legal = False
-                s.is_modern_legal = False
+        apply_set_legality(db.query(SetModel).all(), set_counts)
 
         if is_sqlite:
             scryfall_state.progress_pct = 95.0

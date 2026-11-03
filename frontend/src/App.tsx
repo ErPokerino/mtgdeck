@@ -77,6 +77,14 @@ export const App: React.FC = () => {
   const [builderEpoch, setBuilderEpoch] = useState(0);
   const [guideIntent, setGuideIntent] = useState(false);
   const [activeDeck, setActiveDeck] = useState<DeckDetail | null>(null);
+  const [aiStudioFormats, setAiStudioFormats] = useState<FormatId[]>([
+    initialNav.format,
+  ]);
+  useEffect(() => {
+    setAiStudioFormats((prev) =>
+      prev.includes(selectedFormat) ? prev : [...prev, selectedFormat],
+    );
+  }, [selectedFormat]);
 
   // Navigation history stack synchronized with Browser History API
   const [navStack, setNavStack] = useState<NavEntry[]>([initialNav]);
@@ -87,6 +95,21 @@ export const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [helpToken, setHelpToken] = useState(0);
+
+  // Full-height views size themselves against the real header, which wraps on narrow screens.
+  useEffect(() => {
+    const header = document.querySelector<HTMLElement>(".workspace-header");
+    if (!header) return;
+    const update = () =>
+      document.documentElement.style.setProperty(
+        "--header-h",
+        `${header.offsetHeight}px`,
+      );
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
 
   // Initialize first history entry
   useEffect(() => {
@@ -119,21 +142,19 @@ export const App: React.FC = () => {
       setPreselectedSetCode(nextEntry.setCode);
 
       if (!isPoppingRef.current) {
-        setNavStack((prev) => {
-          const sliced = prev.slice(0, navIndex + 1);
-          const nextStack = [...sliced, nextEntry];
-          const nextIdx = nextStack.length - 1;
-          setNavIndex(nextIdx);
-          window.history.pushState(
-            { navIdx: nextIdx, entry: nextEntry },
-            "",
-            buildUrlSearch(nextEntry),
-          );
-          return nextStack;
-        });
+        // Side effects stay out of state updaters: StrictMode runs updaters twice.
+        const nextStack = [...navStack.slice(0, navIndex + 1), nextEntry];
+        const nextIdx = nextStack.length - 1;
+        setNavStack(nextStack);
+        setNavIndex(nextIdx);
+        window.history.pushState(
+          { navIdx: nextIdx, entry: nextEntry },
+          "",
+          buildUrlSearch(nextEntry),
+        );
       }
     },
-    [activeTab, selectedFormat, preselectedSetCode, navIndex],
+    [activeTab, selectedFormat, preselectedSetCode, navIndex, navStack],
   );
 
   // Listen to browser Back / Forward (popstate)
@@ -319,6 +340,24 @@ export const App: React.FC = () => {
               setGuideIntent(true);
               navigateTo({ tab: "ai_studio" });
             }}
+            onRestored={(d) => {
+              // The builder keeps a local draft of the open deck: drop it and remount,
+              // otherwise a later "Salva" would overwrite the restored version.
+              let draftDeckId: number | null = null;
+              try {
+                const key = `aetherdeck.draft.${d.format_id}`;
+                draftDeckId = JSON.parse(
+                  localStorage.getItem(key) || "null",
+                )?.deckId;
+                if (draftDeckId === d.id) localStorage.removeItem(key);
+              } catch {
+                /* Browser storage can be disabled. */
+              }
+              if (activeDeck?.id === d.id || draftDeckId === d.id) {
+                setActiveDeck(d);
+                setBuilderEpoch((e) => e + 1);
+              }
+            }}
             onDelete={(id) => {
               try {
                 const draft = JSON.parse(
@@ -382,30 +421,38 @@ export const App: React.FC = () => {
           />
         )}
 
-        <div hidden={activeTab !== "ai_studio"}>
-          <AIStudioView
-            key={selectedFormat}
-            openGuide={guideIntent}
-            onGuideIntentHandled={() => setGuideIntent(false)}
-            onChangeModel={handleChangeComplexModel}
-            formatId={selectedFormat}
-            activeDeck={
-              activeDeck?.format_id === selectedFormat ? activeDeck : null
-            }
-            settings={settings}
-            preselectedOpponentArchetype={preselectedOpponentArch}
-            onClearPreselectedOpponent={() => setPreselectedOpponentArch(null)}
-            onOpenDeckInBuilder={(deck) => {
-              setActiveDeck(deck);
-              navigateTo({ tab: "deckbuilder" });
-            }}
-            onOpenDeckInPlaytest={(deck) => {
-              setActiveDeck(deck);
-              navigateTo({ tab: "playtest" });
-            }}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-          />
-        </div>
+        {/* One instance per visited format: generation and matchup requests are
+            synchronous, so remounting on a format switch would drop their results. */}
+        {aiStudioFormats.map((fmt) => (
+          <div
+            key={fmt}
+            hidden={activeTab !== "ai_studio" || fmt !== selectedFormat}
+          >
+            <AIStudioView
+              openGuide={fmt === selectedFormat && guideIntent}
+              onGuideIntentHandled={() => setGuideIntent(false)}
+              onChangeModel={handleChangeComplexModel}
+              formatId={fmt}
+              activeDeck={activeDeck?.format_id === fmt ? activeDeck : null}
+              settings={settings}
+              preselectedOpponentArchetype={
+                fmt === selectedFormat ? preselectedOpponentArch : null
+              }
+              onClearPreselectedOpponent={() =>
+                setPreselectedOpponentArch(null)
+              }
+              onOpenDeckInBuilder={(deck) => {
+                setActiveDeck(deck);
+                navigateTo({ tab: "deckbuilder" });
+              }}
+              onOpenDeckInPlaytest={(deck) => {
+                setActiveDeck(deck);
+                navigateTo({ tab: "playtest" });
+              }}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+            />
+          </div>
+        ))}
 
         <div hidden={activeTab !== "playtest"}>
           <PlaytestView

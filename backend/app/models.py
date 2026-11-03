@@ -89,8 +89,9 @@ class Card(Base):
     produced_mana = Column(JSON, default=list)
     prices = Column(JSON, default=dict)  # {"usd", "eur", "tix"}
 
-    # Limite copie nel mazzo: 4 di default, None = illimitate (Terre Base, Relentless Rats, Hare Apparent, ecc.)
-    max_copies = Column(Integer, nullable=True, default=4)
+    # Limite copie nel mazzo: None = illimitate (Terre Base, Relentless Rats, Hare Apparent, ecc.).
+    # Nessun default: con l'ORM un None esplicito attiverebbe il default e diventerebbe 4.
+    max_copies = Column(Integer, nullable=True)
     is_basic_land = Column(Boolean, default=False, index=True)
 
     # Campi denormalizzati di legalità per filtri SQL istantanei sui 3 formati principali + legacy/commander info
@@ -214,13 +215,15 @@ class MetaCardStat(Base):
     side_avg_copies = Column(Float, default=0.0)
     top_archetypes = Column(
         JSON, default=list
-    )  # [{"archetype": "...", "presence_pct": 85.0, "avg_copies": 4.0}]
+    )  # [{"archetype": "...", "sample_copies": 4}] copie osservate nella lista di riferimento
 
     snapshot = relationship("MetaSnapshot", back_populates="card_stats")
 
 
 class Deck(Base):
     __tablename__ = "decks"
+    # Without AUTOINCREMENT SQLite reuses deleted ids, re-linking old runs and jobs to new decks.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(255), nullable=False)

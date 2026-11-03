@@ -1,12 +1,15 @@
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from app.config import settings
 from app.database import Base, SessionLocal, engine, init_fts5_index
-from app.models import Card, MetaSnapshot
+from app.migrations import run_startup_repairs
+from app.models import Card, MetaSnapshot, SyncLog
 from app.routers import (
     guides,
     ai,
@@ -27,6 +30,7 @@ scheduler = AsyncIOScheduler()
 async def lifespan(app: FastAPI):
     # 1. Inizializza tabelle SQL + indice FTS5
     Base.metadata.create_all(bind=engine)
+    run_startup_repairs(engine, SessionLocal)
     from app.services.guide_jobs import recover_interrupted_jobs
 
     with SessionLocal() as jobs_db:
@@ -63,6 +67,11 @@ async def lifespan(app: FastAPI):
         ensure_default_formats(db)
         card_count = db.query(func.count(Card.oracle_id)).scalar() or 0
         meta_count = db.query(func.count(MetaSnapshot.id)).scalar() or 0
+        last_sync = (
+            db.query(func.max(SyncLog.completed_at))
+            .filter(SyncLog.source == "scryfall", SyncLog.status == "completed")
+            .scalar()
+        )
     finally:
         db.close()
 
@@ -71,6 +80,9 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(run_scryfall_sync(force_download=False))
     elif meta_count == 0:
         asyncio.create_task(run_meta_sync_all())
+    elif settings.enable_scheduler and _older_than(last_sync, hours=24):
+        # The interval job first fires 24h after start: after downtime, AI features would stay blocked.
+        asyncio.create_task(run_scryfall_sync(force_download=False))
 
     # 3. Scheduler periodico per sincronizzazione Scryfall e Meta (MTGDecks + MTGTop8)
     if settings.enable_scheduler:
@@ -103,13 +115,37 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+ALLOWED_ORIGINS = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+
+
+@app.middleware("http")
+async def reject_cross_site_writes(request: Request, call_next):
+    # The API has no auth and stores the provider key: refuse writes initiated by other sites.
+    origin = request.headers.get("origin")
+    if (
+        origin
+        and request.method not in ("GET", "HEAD", "OPTIONS")
+        and origin not in ALLOWED_ORIGINS
+        and origin != f"{request.url.scheme}://{request.url.netloc}"
+    ):
+        return JSONResponse({"detail": "Origine non autorizzata."}, status_code=403)
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _older_than(stamp, hours: int) -> bool:
+    if stamp is None:
+        return True
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - stamp > timedelta(hours=hours)
 
 app.include_router(formats.router)
 app.include_router(cards.router)

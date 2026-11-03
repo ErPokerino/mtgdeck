@@ -6,12 +6,10 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
-from sqlalchemy import not_
 from sqlalchemy.orm import Session
 from app.models import (
     GuideVersion,
     GuideJob,
-    SyncLog,
     utcnow,
     AIRun,
     Card,
@@ -19,13 +17,13 @@ from app.models import (
     DeckCard,
     MetaArchetype,
     MetaCardStat,
-    MetaMatchup,
     MetaSnapshot,
     SetModel,
 )
 from app.routers.decks import _build_deck_detail, record_revision
 from app.services.ai_provider import get_active_ai_provider, get_skill_model_and_config
 from app.services.deck_validator import (
+    castable_with_colors,
     get_color_combination_label,
     parse_decklist_text,
     resolve_card_by_name,
@@ -33,21 +31,17 @@ from app.services.deck_validator import (
 )
 from app.services.scryfall_sync import sort_colors_wubrg
 from app.services.guide_quality import (
-    validate_guide,
     validate_swaps,
     weighted_meta_estimate,
     evidence_context,
     require_fresh_catalog,
 )
 from app.skills.schemas import (
-    AIDeckCardSlot,
     AIDeckGenerationOutput,
     AIDeckGenerationRequest,
-    AIDeckGuideOutput,
     AIDeckGuideRequest,
     AIMatchupSpotOutput,
     AIMatchupSpotRequest,
-    SideboardSwapItem,
 )
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
@@ -833,6 +827,12 @@ def _validate_ai_deck_against_format_rules(
     leg_attr = f"legality_{fmt}"
     errors: List[str] = []
 
+    allowed_colors = set(requested_colors or [])
+    for b_name in build_around_cards:
+        b_card = resolve_card_by_name(db, b_name)
+        if b_card:
+            allowed_colors.update(b_card.colors or [])
+
     main_cnt = sum(max(0, s.quantity) for s in ai_out.mainboard)
     side_cnt = sum(max(0, s.quantity) for s in ai_out.sideboard)
     if main_cnt != 60:
@@ -863,7 +863,11 @@ def _validate_ai_deck_against_format_rules(
                 )
             elif leg_status != "legal":
                 errors.append(
-                    f"[{board_label}] VIOLAZIONE SET PERMESSI: '{c_obj.name}' (Set '{c_obj.set_code.upper()}') NON appartiene ai set permessi in {fmt.upper()} (stato: {leg_status})."
+                    f"[{board_label}] CARTA NON LEGALE: '{c_obj.name}' non è legale in {fmt.upper()} (stato: {leg_status})."
+                )
+            if allowed_colors and not castable_with_colors(c_obj, allowed_colors):
+                errors.append(
+                    f"[{board_label}] FUORI COLORE: '{c_obj.name}' ({c_obj.mana_cost}) richiede colori diversi da quelli richiesti ({''.join(sort_colors_wubrg(list(allowed_colors)))})."
                 )
 
             prev_card, prev_q = combined_qty.get(c_obj.oracle_id, (c_obj, 0))
@@ -953,12 +957,13 @@ RICHIESTA DI COSTRUZIONE MAZZO COMPETITIVO:
         requested_colors=req.colors,
     )
 
+    # Repairs reuse the generation model: a lighter model rewriting the 75 dilutes the strategy.
+    repair_cfg = get_skill_model_and_config(db, "deck_repair")
+    _, repair_sys = load_skill_prompt("deck_repair", repair_cfg["prompt_version"])
     while validation_errors and attempts <= max_retries:
         attempts += 1
-        repair_cfg = get_skill_model_and_config(db, "deck_repair")
-        _, repair_sys = load_skill_prompt("deck_repair", repair_cfg["prompt_version"])
         repair_prompt = f"""
-IL VALIDATORE UFFICIALE DEL FORMATO {fmt.upper()} (SET PERMESSI + BANLIST + REGOLE 60/15) HA RIFIUTATO LA GENERAZIONE PER I SEGUENTI ERRORI (Tentativo #{attempts}):
+IL VALIDATORE DEL FORMATO {fmt.upper()} (LEGALITÀ + BANLIST + COLORI RICHIESTI + REGOLE 60/15) HA RIFIUTATO LA GENERAZIONE PER I SEGUENTI ERRORI (Tentativo #{attempts}):
 {chr(10).join("- " + e for e in validation_errors)}
 
 RIVALUTA E CORREGGI IL MAZZO GENERATO (JSON):
@@ -968,20 +973,23 @@ RIVALUTA E CORREGGI IL MAZZO GENERATO (JSON):
 """.strip()
         try:
             ai_output = provider.generate_structured(
-                model_id=repair_cfg["model_id"],
+                model_id=skill_cfg["model_id"],
                 system_instruction=repair_sys,
                 user_prompt=repair_prompt,
                 response_model=AIDeckGenerationOutput,
             )
-            validation_errors = _validate_ai_deck_against_format_rules(
-                db=db,
-                format_id=fmt,
-                ai_out=ai_output,
-                build_around_cards=req.build_around_cards,
-                requested_colors=req.colors,
+        except Exception as exc:
+            logging.getLogger("uvicorn.error").warning(
+                "deck_generation repair attempt %s failed: %s", attempts, type(exc).__name__
             )
-        except Exception:
             break
+        validation_errors = _validate_ai_deck_against_format_rules(
+            db=db,
+            format_id=fmt,
+            ai_out=ai_output,
+            build_around_cards=req.build_around_cards,
+            requested_colors=req.colors,
+        )
 
     if validation_errors:
         raise ValueError("Generazione non salvata: " + "; ".join(validation_errors))
@@ -1124,7 +1132,7 @@ def _format_entries_with_oracle(entries: List[Tuple[Card, str, int]]) -> str:
         else:
             side_lines.append(line)
     return (
-        f"MAINBOARD:\n"
+        "MAINBOARD:\n"
         + "\n".join(main_lines)
         + "\n\nSIDEBOARD:\n"
         + "\n".join(side_lines)

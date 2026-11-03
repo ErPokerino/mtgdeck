@@ -2,12 +2,15 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
+from sqlalchemy import func
 from app.models import (
+    AIRun,
     Card,
     Deck,
     DeckCard,
     DeckArchive,
     DeckRevision,
+    GuideJob,
     GuideVersion,
     utcnow,
 )
@@ -144,10 +147,31 @@ def list_decks(
     if format_id:
         q = q.filter(Deck.format_id == format_id.lower())
     decks = q.order_by(Deck.updated_at.desc()).all()
+    ids = [d.id for d in decks]
+    entries_by_deck: Dict[int, List[Tuple[Card, str, int]]] = {i: [] for i in ids}
+    if ids:
+        rows = (
+            db.query(DeckCard, Card)
+            .join(Card, Card.oracle_id == DeckCard.oracle_id)
+            .filter(DeckCard.deck_id.in_(ids), DeckCard.quantity > 0)
+        )
+        for dc, card in rows:
+            entries_by_deck[dc.deck_id].append((card, dc.board, dc.quantity))
+
+    def counts(model) -> Dict[int, int]:
+        if not ids:
+            return {}
+        return dict(
+            db.query(model.deck_id, func.count())
+            .filter(model.deck_id.in_(ids))
+            .group_by(model.deck_id)
+        )
+
+    guide_counts, revision_counts = counts(GuideVersion), counts(DeckRevision)
 
     out: List[DeckSummaryOut] = []
     for d in decks:
-        detail = _build_deck_detail(db, d)
+        validation = validate_deck_entries(d.format_id, entries_by_deck[d.id])
         out.append(
             DeckSummaryOut(
                 id=d.id,
@@ -157,13 +181,13 @@ def list_decks(
                 colors=d.colors or [],
                 color_label=d.color_label,
                 source=d.source,
-                mainboard_count=detail.validation.mainboard_count,
-                sideboard_count=detail.validation.sideboard_count,
-                is_valid=detail.validation.is_valid,
+                mainboard_count=validation.mainboard_count,
+                sideboard_count=validation.sideboard_count,
+                is_valid=validation.is_valid,
                 updated_at=d.updated_at,
                 archived=archived,
-                guide_count=db.query(GuideVersion).filter_by(deck_id=d.id).count(),
-                revision_count=db.query(DeckRevision).filter_by(deck_id=d.id).count(),
+                guide_count=guide_counts.get(d.id, 0),
+                revision_count=revision_counts.get(d.id, 0),
             )
         )
     return out
@@ -228,9 +252,10 @@ def update_deck(deck_id: int, payload: DeckUpdateIn, db: Session = Depends(get_d
     if payload.name is not None:
         deck.name = payload.name.strip() or deck.name
     if payload.format_id is not None:
-        if payload.format_id != deck.format_id:
+        new_format = payload.format_id.lower()
+        if new_format != deck.format_id:
             deck.guide_json = None
-        deck.format_id = payload.format_id.lower()
+        deck.format_id = new_format
     if payload.archetype is not None:
         deck.archetype = payload.archetype
     if payload.description is not None:
@@ -281,6 +306,11 @@ def delete_deck(deck_id: int, db: Session = Depends(get_db)):
     db.query(DeckArchive).filter_by(deck_id=deck_id).delete()
     db.query(DeckRevision).filter_by(deck_id=deck_id).delete()
     db.query(GuideVersion).filter_by(deck_id=deck_id).update({"deck_id": None})
+    db.query(AIRun).filter_by(deck_id=deck_id).update({"deck_id": None})
+    db.query(GuideJob).filter(
+        GuideJob.deck_id == deck_id, GuideJob.status.in_(["queued", "running"])
+    ).update({"status": "cancelled", "finished_at": utcnow()})
+    db.query(GuideJob).filter_by(deck_id=deck_id).update({"deck_id": None})
     db.delete(deck)
     db.commit()
     return {"status": "deleted", "deck_id": deck_id}
@@ -323,11 +353,6 @@ def import_decklist(
             status_code=422,
             detail="Importazione annullata, carte non riconosciute: "
             + ", ".join(unresolved),
-        )
-    if not resolved and unresolved:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Nessuna carta riconosciuta nel database Scryfall. Carte non trovate: {', '.join(unresolved[:10])}",
         )
 
     col_accum: List[str] = []
