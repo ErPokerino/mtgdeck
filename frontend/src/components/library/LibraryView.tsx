@@ -13,6 +13,7 @@ import {
 import { api } from "../../api/client";
 import type { DeckDetail, DeckSummary, FormatId } from "../../types";
 import { GuideReader } from "./GuideReader";
+import { useDialog } from "../../hooks/useDialog";
 
 export function LibraryView({
   formatId,
@@ -65,17 +66,14 @@ export function LibraryView({
     setError("");
     load();
   }, [formatId, tab]);
-  useEffect(() => {
-    if (!guide && !revisions && !pendingDelete) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (pendingDelete) setPendingDelete(null);
-      else if (revisions) setRevisions(null);
-      else setGuide(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [guide, revisions, pendingDelete]);
+  // Only the topmost dialog traps focus and reacts to Esc.
+  const guideDialog = useDialog(!!guide && !revisions && !pendingDelete, () =>
+    setGuide(null),
+  );
+  const revisionsDialog = useDialog(!!revisions && !pendingDelete, () =>
+    setRevisions(null),
+  );
+  const deleteDialog = useDialog(!!pendingDelete, () => setPendingDelete(null));
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError("");
@@ -341,6 +339,8 @@ export function LibraryView({
       {guide && (
         <div className="fixed inset-0 z-50 bg-black/80 overflow-y-auto p-3 md:p-8">
           <div
+            ref={guideDialog}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-label="Guida salvata"
@@ -364,6 +364,8 @@ export function LibraryView({
       {revisions && (
         <div className="modal-backdrop">
           <div
+            ref={revisionsDialog}
+            tabIndex={-1}
             className="panel max-w-3xl w-full max-h-[85vh] overflow-y-auto"
             role="dialog"
             aria-modal="true"
@@ -397,7 +399,7 @@ export function LibraryView({
                   {r.snapshot.cards.map((c: any, i: number) => (
                     <p key={i}>
                       {c.quantity}× {c.card_name}{" "}
-                      <span className="text-slate-500">{c.board}</span>
+                      <span className="text-slate-400">{c.board}</span>
                     </p>
                   ))}
                 </div>
@@ -425,6 +427,8 @@ export function LibraryView({
       {pendingDelete && (
         <div className="modal-backdrop">
           <div
+            ref={deleteDialog}
+            tabIndex={-1}
             className="panel max-w-lg"
             role="alertdialog"
             aria-modal="true"

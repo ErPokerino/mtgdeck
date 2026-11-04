@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useDialog } from "../../hooks/useDialog";
 import {
   Check,
   Cpu,
@@ -44,6 +45,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   useEffect(() => {
     if (isOpen && settings) setComplexModel(settings.selected_complex_model_id);
   }, [isOpen, settings?.selected_complex_model_id]);
+  const dialog = useDialog(isOpen && !!settings, onClose);
   if (!isOpen || !settings) return null;
 
   const complexModels = settings.available_models.filter(
@@ -75,12 +77,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#0E121B] border border-[#242E44] rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden">
+      <div
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        tabIndex={-1}
+        className="bg-[#0E121B] border border-[#242E44] rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] overflow-y-auto"
+      >
         {/* Header */}
         <div className="px-6 py-4 bg-[#121826] border-b border-[#1F293D] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <Cpu className="w-5 h-5 text-[#C8AA6E]" />
-            <h2 className="font-display font-bold text-base text-[#F3E5C8]">
+            <h2
+              id="settings-title"
+              className="font-display font-bold text-base text-[#F3E5C8]"
+            >
               Impostazioni
             </h2>
           </div>
@@ -139,10 +151,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {complexModels.map((m) => {
                 const selected = complexModel === m.id;
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={m.id}
+                    aria-pressed={selected}
                     onClick={() => setComplexModel(m.id)}
-                    className={`p-3.5 rounded-lg border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                    className={`w-full text-left p-3.5 rounded-lg border transition-all cursor-pointer flex items-start justify-between gap-3 ${
                       selected
                         ? "bg-[#171F32] border-[#C8AA6E]"
                         : "bg-[#0A0D14] border-[#1E2638] hover:border-slate-600"
@@ -153,7 +167,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <span className="text-xs font-bold text-[#F3E5C8]">
                           {m.label}
                         </span>
-                        <span className="text-[10px] font-mono-tech px-1.5 py-0.5 rounded bg-[#101522] text-purple-300 border border-purple-500/30">
+                        <span className="text-[11px] font-mono-tech px-1.5 py-0.5 rounded bg-[#101522] text-purple-300 border border-purple-500/30">
                           {m.id}
                         </span>
                       </div>
@@ -170,7 +184,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     >
                       {selected && <Check className="w-3 h-3 stroke-[3]" />}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -193,7 +207,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </p>
                 </div>
               </div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono-tech bg-emerald-950/60 text-emerald-300 border border-emerald-700/40 shrink-0">
+              <span className="px-2 py-0.5 rounded text-[11px] font-mono-tech bg-emerald-950/60 text-emerald-300 border border-emerald-700/40 shrink-0">
                 Sempre Attivo
               </span>
             </div>

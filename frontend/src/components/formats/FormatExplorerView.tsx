@@ -79,7 +79,7 @@ export const FormatExplorerView: React.FC<FormatExplorerViewProps> = ({
 
         <div className="flex items-center gap-4">
           <div className="px-4 py-2.5 rounded-lg bg-[#090C14] border border-[#1E2638] text-center">
-            <div className="text-[10px] font-mono-tech uppercase text-slate-400">
+            <div className="text-[11px] font-mono-tech uppercase text-slate-400">
               Set indicativi
             </div>
             <div className="text-lg font-bold font-mono-tech text-[#C8AA6E]">
@@ -87,7 +87,7 @@ export const FormatExplorerView: React.FC<FormatExplorerViewProps> = ({
             </div>
           </div>
           <div className="px-4 py-2.5 rounded-lg bg-[#090C14] border border-[#1E2638] text-center">
-            <div className="text-[10px] font-mono-tech uppercase text-slate-400">
+            <div className="text-[11px] font-mono-tech uppercase text-slate-400">
               Carte Legali
             </div>
             <div className="text-lg font-bold font-mono-tech text-emerald-400">
@@ -95,7 +95,7 @@ export const FormatExplorerView: React.FC<FormatExplorerViewProps> = ({
             </div>
           </div>
           <div className="px-4 py-2.5 rounded-lg bg-[#090C14] border border-[#1E2638] text-center">
-            <div className="text-[10px] font-mono-tech uppercase text-slate-400">
+            <div className="text-[11px] font-mono-tech uppercase text-slate-400">
               Carte Bandite
             </div>
             <div className="text-lg font-bold font-mono-tech text-rose-400">
@@ -152,7 +152,7 @@ export const FormatExplorerView: React.FC<FormatExplorerViewProps> = ({
                         <span className="font-semibold text-xs text-slate-100 truncate group-hover:text-[#F3E5C8]">
                           {s.name}
                         </span>
-                        <span className="font-mono-tech text-[10px] uppercase px-1.5 py-0.2 rounded bg-[#090C12] text-[#C8AA6E] border border-[#26314A]">
+                        <span className="font-mono-tech text-[11px] uppercase px-1.5 py-0.2 rounded bg-[#090C12] text-[#C8AA6E] border border-[#26314A]">
                           {s.code}
                         </span>
                       </div>
@@ -168,7 +168,7 @@ export const FormatExplorerView: React.FC<FormatExplorerViewProps> = ({
                       </div>
                     </div>
                   </div>
-                  <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-[#C8AA6E] shrink-0" />
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#C8AA6E] shrink-0" />
                 </div>
               ))}
             </div>
@@ -226,7 +226,7 @@ export const FormatExplorerView: React.FC<FormatExplorerViewProps> = ({
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <ManaCost cost={b.mana_cost} size="xs" />
-                      <span className="text-[10px] font-mono-tech uppercase px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-700/40">
+                      <span className="text-[11px] font-mono-tech uppercase px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-700/40">
                         BANNED
                       </span>
                     </div>

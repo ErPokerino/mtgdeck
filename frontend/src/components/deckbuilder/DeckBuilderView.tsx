@@ -26,6 +26,7 @@ import {
   Search,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { api } from "../../api/client";
 import type {
@@ -37,11 +38,14 @@ import type {
   DeckValidationReport,
   FormatDetail,
   FormatId,
+  ListAnalysis,
 } from "../../types";
 import { CardInfoModal } from "../common/CardInfoModal";
 import { ColorBadges, ManaCost, SetSymbol } from "../common/ManaCost";
 import { ResizableSplitPane } from "../common/ResizableSplitPane";
 import { ImportExportModal } from "./ImportExportModal";
+import { UndoToast } from "../common/UndoToast";
+import { InteractionSummary, ManaRequirements } from "./CompetitiveStats";
 
 interface DeckBuilderViewProps {
   formatId: FormatId;
@@ -102,6 +106,28 @@ const castableManaValue = (card: Card) => {
   return card.cmc || 0;
 };
 
+// Scryfall Tagger functions ingested by the backend (descendants included).
+const FUNCTION_FILTERS = [
+  { id: "", label: "Tutte le funzioni" },
+  { id: "removal", label: "Rimozione" },
+  { id: "removal-creature", label: "Rimozione creature" },
+  { id: "removal-exile", label: "Esilio" },
+  { id: "burn", label: "Danno diretto" },
+  { id: "sweeper", label: "Rimozione di massa" },
+  { id: "counterspell", label: "Counter" },
+  { id: "discard", label: "Scarto" },
+  { id: "draw", label: "Pescata" },
+  { id: "card-advantage", label: "Vantaggio carte" },
+  { id: "hate-graveyard", label: "Hate al cimitero" },
+  { id: "removal-artifact", label: "Rimozione artefatti" },
+  { id: "removal-enchantment", label: "Rimozione incantesimi" },
+  { id: "ramp", label: "Ramp" },
+  { id: "tutor", label: "Tutor" },
+  { id: "lifegain", label: "Guadagno vita" },
+  { id: "recursion", label: "Ricorsione" },
+  { id: "protection", label: "Protezione" },
+];
+
 const RARITIES = [
   { id: "", label: "Tutte le rarità" },
   { id: "common", label: "Common" },
@@ -135,6 +161,24 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
   const [toughnessMin, setToughnessMin] = useState("");
   const [toughnessMax, setToughnessMax] = useState("");
   const [selectedRarity, setSelectedRarity] = useState("");
+  const [selectedFunction, setSelectedFunction] = useState("");
+  const nameInput = useRef<HTMLInputElement>(null);
+  // "/" focuses the card search, as in most catalogues; ignored while typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing =
+        el &&
+        (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) ||
+          el.isContentEditable);
+      if (e.key === "/" && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        nameInput.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [selectedType, setSelectedType] = useState("");
   const [subtypeQuery, setSubtypeQuery] = useState("");
   const [sortBy, setSortBy] = useState("meta_desc");
@@ -205,6 +249,12 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
       issues: [],
     },
   );
+  const [competitive, setCompetitive] = useState<ListAnalysis | null>(null);
+  const [undo, setUndo] = useState<{
+    message: string;
+    items: DeckCardItem[];
+  } | null>(null);
+  const dismissUndo = useCallback(() => setUndo(null), []);
   const [analytics, setAnalytics] = useState<DeckAnalytics>(
     activeDeck?.analytics || {
       mana_curve: {},
@@ -332,6 +382,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
           toughness_max: toughnessMax !== "" ? Number(toughnessMax) : undefined,
           rarity: selectedRarity || undefined,
           card_type: combinedType || undefined,
+          tag: selectedFunction || undefined,
           sort_by: sortBy,
           page,
           page_size: 36,
@@ -364,6 +415,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
     selectedRarity,
     selectedType,
     subtypeQuery,
+    selectedFunction,
     sortBy,
     page,
   ]);
@@ -397,6 +449,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
           setColorLabel(res.color_label);
           setValidation(res.validation);
           setAnalytics(res.analytics);
+          setCompetitive(res.competitive);
           setExportTexts(res.export);
         })
         .catch((err) => {
@@ -426,8 +479,47 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
     setSelectedRarity("");
     setSelectedType("");
     setSubtypeQuery("");
+    setSelectedFunction("");
     setPage(1);
   };
+  const activeFilters: { label: string; clear: () => void }[] = [
+    nameQuery && { label: `Nome: ${nameQuery}`, clear: () => setNameQuery("") },
+    oracleQuery && { label: `Testo: ${oracleQuery}`, clear: () => setOracleQuery("") },
+    selectedColors.length > 0 && {
+      label: `Colori: ${selectedColors.join("")}`,
+      clear: () => setSelectedColors([]),
+    },
+    selectedType && { label: `Tipo: ${selectedType}`, clear: () => setSelectedType("") },
+    subtypeQuery && { label: `Sottotipo: ${subtypeQuery}`, clear: () => setSubtypeQuery("") },
+    selectedFunction && {
+      label: `Funzione: ${FUNCTION_FILTERS.find((f) => f.id === selectedFunction)?.label}`,
+      clear: () => setSelectedFunction(""),
+    },
+    selectedSet && { label: `Set: ${selectedSet.toUpperCase()}`, clear: () => setSelectedSet("") },
+    selectedRarity && { label: `Rarità: ${selectedRarity}`, clear: () => setSelectedRarity("") },
+    cmcExact !== null && { label: `Costo: ${cmcExact}`, clear: () => setCmcExact(null) },
+    (cmcMin !== "" || cmcMax !== "") && {
+      label: `Costo ${cmcMin || "0"}–${cmcMax || "∞"}`,
+      clear: () => {
+        setCmcMin("");
+        setCmcMax("");
+      },
+    },
+    (powerMin !== "" || powerMax !== "") && {
+      label: `Forza ${powerMin || "0"}–${powerMax || "∞"}`,
+      clear: () => {
+        setPowerMin("");
+        setPowerMax("");
+      },
+    },
+    (toughnessMin !== "" || toughnessMax !== "") && {
+      label: `Costituzione ${toughnessMin || "0"}–${toughnessMax || "∞"}`,
+      clear: () => {
+        setToughnessMin("");
+        setToughnessMax("");
+      },
+    },
+  ].filter(Boolean) as { label: string; clear: () => void }[];
 
   const toggleColor = (col: string) => {
     setPage(1);
@@ -487,9 +579,17 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
     oracleId: string,
     board: "main" | "side" | "companion",
   ) => {
+    const removed = deckItems.find(
+      (i) => i.oracle_id === oracleId && i.board === board,
+    );
     setDeckItems((prev) =>
       prev.filter((i) => !(i.oracle_id === oracleId && i.board === board)),
     );
+    if (removed)
+      setUndo({
+        message: `Rimosse ${removed.quantity} ${removed.card_name} (${board === "main" ? "main" : board === "side" ? "side" : "companion"})`,
+        items: deckItems,
+      });
   };
 
   const handleMoveBoard = (item: DeckCardItem) => {
@@ -718,7 +818,9 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                 <div className="sm:col-span-5 relative">
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
+                    ref={nameInput}
                     type="text"
+                    aria-label="Cerca per nome (scorciatoia /)"
                     value={nameQuery}
                     onChange={(e) => {
                       setNameQuery(e.target.value);
@@ -798,7 +900,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                       setColorMode(e.target.value as any);
                       setPage(1);
                     }}
-                    className="bg-transparent text-[10px] font-mono-tech text-slate-300 pl-1 pr-0.5 focus:outline-none cursor-pointer"
+                    className="bg-transparent text-[11px] font-mono-tech text-slate-300 pl-1 pr-0.5 focus:outline-none cursor-pointer"
                     title="Modalità filtro colore"
                   >
                     <option value="include" className="bg-[#0D111A]">
@@ -815,7 +917,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
 
                 {/* Mana Value (CMC) Quick Selector */}
                 <div className="flex items-center gap-0.5 bg-[#080A10] p-1 rounded-lg border border-[#1E2638]">
-                  <span className="text-[10px] font-mono-tech text-slate-400 px-1.5">
+                  <span className="text-[11px] font-mono-tech text-slate-400 px-1.5">
                     CMC:
                   </span>
                   {[0, 1, 2, 3, 4, 5, 6].map((val) => {
@@ -842,6 +944,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
 
                 {/* Type Dropdown */}
                 <select
+                  aria-label="Tipo di carta"
                   value={selectedType}
                   onChange={(e) => {
                     setSelectedType(e.target.value);
@@ -857,8 +960,26 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   ))}
                 </select>
 
+                {/* Functional role (Scryfall Tagger) */}
+                <select
+                  aria-label="Funzione della carta"
+                  value={selectedFunction}
+                  onChange={(e) => {
+                    setSelectedFunction(e.target.value);
+                    setPage(1);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-[#080A10] border border-[#1E2638] text-xs text-slate-200 focus:outline-none focus:border-[#C8AA6E] cursor-pointer"
+                >
+                  {FUNCTION_FILTERS.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+
                 {/* Admitted Sets Dropdown */}
                 <select
+                  aria-label="Set"
                   value={selectedSet}
                   onChange={(e) => {
                     setSelectedSet(e.target.value);
@@ -878,6 +999,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
 
                 {/* Primary Sort Dropdown (Always visible, defaults to Meta %) */}
                 <select
+                  aria-label="Ordinamento dei risultati"
                   value={sortBy}
                   onChange={(e) => {
                     setSortBy(e.target.value);
@@ -895,11 +1017,31 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                 </select>
               </div>
 
+              {activeFilters.length > 0 && (
+                <ul className="flex flex-wrap gap-1.5" aria-label="Filtri attivi">
+                  {activeFilters.map((f) => (
+                    <li key={f.label}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          f.clear();
+                          setPage(1);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-full border border-[#C8AA6E]/40 bg-[#141A28] px-2 py-0.5 text-xs text-[#F3E5C8] min-h-6"
+                        aria-label={`Rimuovi filtro ${f.label}`}
+                      >
+                        {f.label} <X className="w-3 h-3" aria-hidden="true" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
               {/* Row 3 (Collapsible): Advanced Filters (Power, Toughness, Rarity, Subtype, CMC Min/Max, Sort) */}
               {showAdvancedFilters && (
                 <div className="pt-2 border-t border-[#1E2638] grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
                   <div>
-                    <label className="block text-[10px] font-mono-tech text-slate-400 mb-0.5">
+                    <label className="block text-[11px] font-mono-tech text-slate-400 mb-0.5">
                       Rarità
                     </label>
                     <select
@@ -919,7 +1061,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-mono-tech text-slate-400 mb-0.5">
+                    <label className="block text-[11px] font-mono-tech text-slate-400 mb-0.5">
                       Sottotipo (es. Goblin)
                     </label>
                     <input
@@ -935,7 +1077,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-mono-tech text-slate-400 mb-0.5">
+                    <label className="block text-[11px] font-mono-tech text-slate-400 mb-0.5">
                       CMC (Min - Max)
                     </label>
                     <div className="flex items-center gap-1">
@@ -969,7 +1111,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-mono-tech text-slate-400 mb-0.5">
+                    <label className="block text-[11px] font-mono-tech text-slate-400 mb-0.5">
                       Forza (Min - Max)
                     </label>
                     <div className="flex items-center gap-1">
@@ -997,7 +1139,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-mono-tech text-slate-400 mb-0.5">
+                    <label className="block text-[11px] font-mono-tech text-slate-400 mb-0.5">
                       Costituz. (Min - Max)
                     </label>
                     <div className="flex items-center gap-1">
@@ -1025,7 +1167,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-mono-tech text-slate-400 mb-0.5">
+                    <label className="block text-[11px] font-mono-tech text-slate-400 mb-0.5">
                       Ordina per
                     </label>
                     <select
@@ -1145,7 +1287,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                               <div className="font-bold text-white">
                                 {card.name}
                               </div>
-                              <div className="text-[10px]">
+                              <div className="text-[11px]">
                                 {card.oracle_text}
                               </div>
                             </div>
@@ -1162,7 +1304,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                           {/* Meta Presence Pill if present */}
                           {card.meta_info &&
                             card.meta_info.overall_presence_pct > 0 && (
-                              <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-sky-950/90 border border-sky-500/50 text-sky-300 font-mono-tech text-[10px] font-bold">
+                              <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-sky-950/90 border border-sky-500/50 text-sky-300 font-mono-tech text-[11px] font-bold">
                                 Meta{" "}
                                 {card.meta_info.overall_presence_pct.toFixed(0)}
                                 %
@@ -1403,33 +1545,39 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
               {/* Live Validation Status Bar (60/15, 4x limit, Banlist) */}
               <div
                 className={`px-3 py-2 rounded-lg border flex flex-col gap-1.5 ${
-                  validation.is_valid
-                    ? "bg-emerald-950/30 border-emerald-700/40"
-                    : "bg-amber-950/25 border-amber-700/40"
+                  deckItems.length === 0
+                    ? "bg-slate-900/40 border-slate-700/60"
+                    : validation.is_valid
+                      ? "bg-emerald-950/30 border-emerald-700/40"
+                      : "bg-amber-950/25 border-amber-700/40"
                 }`}
               >
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
-                    {validation.is_valid ? (
+                    {deckItems.length === 0 ? null : validation.is_valid ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                     ) : (
                       <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
                     )}
                     <span className="font-bold text-slate-100">
-                      {validation.is_valid
-                        ? `Mazzo Legale in ${formatId.toUpperCase()}`
-                        : `Validazione ${formatId.toUpperCase()}`}
+                      {deckItems.length === 0
+                        ? "Bozza vuota: aggiungi carte per iniziare"
+                        : validation.is_valid
+                          ? `Mazzo legale in ${formatId.toUpperCase()}`
+                          : `Validazione ${formatId.toUpperCase()}`}
                     </span>
                   </div>
 
                   <div className="flex items-center gap-3 font-mono-tech text-xs">
                     <span
                       className={
-                        validation.mainboard_count === 60
-                          ? "text-emerald-400 font-bold"
-                          : validation.mainboard_count < 60
-                            ? "text-amber-300 font-bold"
-                            : "text-sky-300 font-bold"
+                        deckItems.length === 0
+                          ? "text-slate-300"
+                          : validation.mainboard_count === 60
+                            ? "text-emerald-400 font-bold"
+                            : validation.mainboard_count < 60
+                              ? "text-amber-300 font-bold"
+                              : "text-sky-300 font-bold"
                       }
                     >
                       Main: {validation.mainboard_count}/60
@@ -1452,7 +1600,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   </div>
                 </div>
 
-                {validation.issues.length > 0 && (
+                {deckItems.length > 0 && validation.issues.length > 0 && (
                   <div className="space-y-0.5 pt-1 border-t border-white/10 max-h-20 overflow-y-auto">
                     {validation.issues.map((iss, idx) => (
                       <div
@@ -1580,7 +1728,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                         item.card.meta_info
                                           .overall_presence_pct > 0 && (
                                           <span
-                                            className="px-1.5 py-0.2 rounded bg-sky-950/80 border border-sky-700/40 text-sky-300 font-mono-tech text-[9px] font-bold"
+                                            className="px-1.5 py-0.2 rounded bg-sky-950/80 border border-sky-700/40 text-sky-300 font-mono-tech text-[11px] font-bold"
                                             title={`Giocata nel ${item.card.meta_info.overall_presence_pct.toFixed(1)}% dei mazzi torneo`}
                                           >
                                             {item.card.meta_info.overall_presence_pct.toFixed(
@@ -1671,7 +1819,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                     </div>
 
                     {sideboardItems.length === 0 ? (
-                      <p className="text-xs text-slate-500 py-2">
+                      <p className="text-xs text-slate-400 py-2">
                         Nessuna carta in Sideboard. Usa il pulsante{" "}
                         <strong>+ Side</strong> sulle carte.
                       </p>
@@ -1802,7 +1950,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   <div className="md:col-span-7 bg-[#090C12] border border-[#192030] rounded-lg p-3">
                     <div className="flex items-center justify-between text-[11px] text-slate-400 mb-2">
                       <span>Curva di Mana (Escluse Terre)</span>
-                      <div className="flex items-center gap-3 text-[10px]">
+                      <div className="flex items-center gap-3 text-[11px]">
                         <span className="flex items-center gap-1">
                           <span className="w-2 h-2 rounded-xs bg-[#C8AA6E]" />{" "}
                           Creature
@@ -1841,7 +1989,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                             key={bucket}
                             className="flex-1 flex flex-col items-center gap-1 h-full"
                           >
-                            <span className="font-mono-tech text-[10px] text-slate-300">
+                            <span className="font-mono-tech text-[11px] text-slate-300">
                               {data.total > 0 ? data.total : ""}
                             </span>
                             <div className="w-full flex-1 bg-[#111622] rounded-t flex flex-col justify-end overflow-hidden border border-[#1D2538]">
@@ -1860,7 +2008,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                 />
                               )}
                             </div>
-                            <span className="font-mono-tech text-[10px] font-bold text-slate-400">
+                            <span className="font-mono-tech text-[11px] font-bold text-slate-400">
                               {bucket}
                             </span>
                           </div>
@@ -1871,65 +2019,27 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
 
                   {/* Color Pips vs Mana Sources (5 cols) */}
                   <div className="md:col-span-5 bg-[#090C12] border border-[#192030] rounded-lg p-3 space-y-2">
-                    <div className="text-[11px] text-slate-400 flex items-center justify-between">
-                      <span>Simboli Costo (Pips) vs Fonti</span>
-                      <span className="font-mono-tech text-[10px]">
-                        Pips / Terre
-                      </span>
+                    <div className="text-xs text-slate-400 flex items-center justify-between">
+                      <span>Fonti di mana rispetto ai requisiti</span>
+                      <span className="font-mono-tech">Karsten · 60 carte</span>
                     </div>
-
-                    <div className="space-y-1.5">
-                      {(["W", "U", "B", "R", "G", "C"] as const).map((col) => {
-                        const pips =
-                          analytics.color_pip_distribution?.[col] || 0;
-                        const sources =
-                          analytics.mana_source_distribution?.[col] || 0;
-                        if (pips === 0 && sources === 0) return null;
-                        return (
-                          <div key={col} className="space-y-0.5">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="flex items-center gap-1.5 font-medium text-slate-200">
-                                <i
-                                  className={`ms ms-${col.toLowerCase()} ms-cost text-xs`}
-                                />
-                                <span>{col}</span>
-                              </span>
-                              <span className="font-mono-tech text-[11px] text-slate-300">
-                                <strong className="text-[#F3E5C8]">
-                                  {pips}
-                                </strong>{" "}
-                                pips •{" "}
-                                <strong className="text-emerald-400">
-                                  {sources}
-                                </strong>{" "}
-                                fonti
-                              </span>
-                            </div>
-                            <div className="w-full h-1.5 rounded-full bg-[#131926] overflow-hidden flex">
-                              <div
-                                className="bg-[#C8AA6E] h-full"
-                                style={{ width: `${Math.min(100, pips * 3)}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {Object.values(
-                        analytics.color_pip_distribution || {},
-                      ).every((v) => v === 0) && (
-                        <p className="text-[11px] text-slate-500 py-4 text-center">
-                          Aggiungi carte al mazzo per analizzare il
-                          bilanciamento tra simboli di mana e fonti.
-                        </p>
-                      )}
-                    </div>
+                    <ManaRequirements analysis={competitive} />
                   </div>
                 </div>
+                <InteractionSummary analysis={competitive} />
               </div>
             </div>
           </div>
         }
       />
+
+      {undo && (
+        <UndoToast
+          message={undo.message}
+          onUndo={() => setDeckItems(undo.items)}
+          onDismiss={dismissUndo}
+        />
+      )}
 
       {/* Card Detail & Meta Info Modal */}
       <CardInfoModal

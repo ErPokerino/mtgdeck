@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, case, func, not_, or_
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Card, MetaCardStat, MetaSnapshot
+from app.models import Card, CardTag, MetaCardStat, MetaSnapshot
 from app.schemas import CardMetaInfo, CardOut, CardSearchResponse
 from app.services.scryfall_sync import normalize_card_name, sort_colors_wubrg
 
@@ -98,6 +98,9 @@ def search_cards(
     rarity: Optional[str] = Query(None, description="common,uncommon,rare,mythic"),
     card_type: Optional[str] = Query(
         None, description="Tipo o sottotipo (es. Creature, Instant, Goblin)"
+    ),
+    tag: Optional[str] = Query(
+        None, description="Funzione Scryfall Tagger (es. removal, counterspell, draw)"
     ),
     sort_by: str = Query(
         "cmc_asc",
@@ -202,6 +205,11 @@ def search_cards(
     if card_type and card_type.strip():
         for token in card_type.strip().split():
             query = query.filter(Card.type_line.ilike(f"%{token}%"))
+
+    # 10. Funzione (tag Scryfall Tagger, discendenti già inclusi all'ingest)
+    if tag and tag.strip():
+        tagged = db.query(CardTag.oracle_id).filter(CardTag.tag == tag.strip().lower())
+        query = query.filter(Card.oracle_id.in_(tagged))
 
     total = query.count()
 

@@ -35,7 +35,7 @@ function Curve({ curve }: { curve: Record<string, number> }) {
             className="w-full rounded-t bg-sky-500/70"
             style={{ height: `${(n / max) * 70}%` }}
           />
-          <span className="text-xs text-slate-500 mt-1">{mv}</span>
+          <span className="text-xs text-slate-400 mt-1">{mv}</span>
         </div>
       ))}
     </div>
@@ -54,7 +54,7 @@ function Interaction({
     <div>
       <p className="eyebrow">{title}</p>
       {rows.length === 0 ? (
-        <p className="text-sm text-slate-500 mt-2">Nessuna carta etichettata.</p>
+        <p className="text-sm text-slate-400 mt-2">Nessuna carta etichettata.</p>
       ) : (
         <ul className="mt-2 space-y-1 text-sm">
           {rows.map(([group, v]) => (
@@ -158,7 +158,7 @@ function AnalysisPanel({ a }: { a: ListAnalysis }) {
           ))}
         </ul>
       </div>
-      <ul className="text-xs text-slate-500 space-y-1">
+      <ul className="text-xs text-slate-400 space-y-1">
         {a.notes.map((n) => (
           <li key={n}>{n}</li>
         ))}
@@ -267,7 +267,7 @@ export function GenerationReport({
                   <li key={n}>
                     <span className="text-rose-300">−{s.quantity} {s.card_out}</span>{" "}
                     <span className="text-emerald-300">+{s.quantity} {s.card_in}</span>{" "}
-                    <span className="text-slate-500">({BOARD[s.board]})</span>
+                    <span className="text-slate-400">({BOARD[s.board]})</span>
                     <span className="block text-slate-400">{s.reason}</span>
                   </li>
                 ))}
@@ -317,7 +317,7 @@ export function GenerationReport({
                       <td className="text-slate-300">
                         {d.reason}
                         {d.matchups.length > 0 && (
-                          <span className="block text-xs text-slate-500 mt-1">
+                          <span className="block text-xs text-slate-400 mt-1">
                             {d.matchups.join(", ")}
                           </span>
                         )}
@@ -339,7 +339,7 @@ export function GenerationReport({
               <details key={p.opponent_archetype} className="py-3">
                 <summary className="cursor-pointer font-medium">
                   {p.opponent_archetype}
-                  <span className="text-slate-500 text-sm">
+                  <span className="text-slate-400 text-sm">
                     {" "}
                     · {p.sideboard_in.reduce((s, c) => s + c.quantity, 0)} cambi
                   </span>
@@ -355,7 +355,7 @@ export function GenerationReport({
                     <div key={label}>
                       <p className={`font-semibold ${color}`}>{label}</p>
                       {rows.length === 0 ? (
-                        <p className="text-slate-500">Nessun cambio</p>
+                        <p className="text-slate-400">Nessun cambio</p>
                       ) : (
                         <ul>
                           {rows.map((c) => (
@@ -400,7 +400,7 @@ export function GenerationReport({
               <details className="py-3 border-b border-slate-800 text-sm" key={i}>
                 <summary className="cursor-pointer">
                   {slot.quantity}× {slot.card_name}{" "}
-                  <span className="text-slate-500">· {slot.role}</span>
+                  <span className="text-slate-400">· {slot.role}</span>
                 </summary>
                 <p className="text-slate-300 mt-2">{slot.reason}</p>
                 <button

@@ -136,7 +136,7 @@ export function GuideReader({
               <p className="text-sm text-slate-300">
                 {guide.pro_score_rationale}
               </p>
-              <p className="text-xs text-slate-500 mt-2">
+              <p className="text-xs text-slate-400 mt-2">
                 Punteggio di una versione precedente, senza evidenza misurata.
               </p>
             </>
@@ -381,7 +381,7 @@ export function GuideReader({
                         return (
                           <td
                             key={i}
-                            className={`text-center ${v > 0 ? "text-emerald-300" : v < 0 ? "text-rose-300" : "text-slate-600"}`}
+                            className={`text-center ${v > 0 ? "text-emerald-300" : v < 0 ? "text-rose-300" : "text-slate-400"}`}
                           >
                             {v > 0 ? `+${v}` : v < 0 ? `−${-v}` : "·"}
                           </td>

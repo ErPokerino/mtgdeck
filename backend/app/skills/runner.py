@@ -418,8 +418,15 @@ MATCHUP OBBLIGATORI (usa questi nomi esatti): {", ".join(a.name for a in archs) 
 def run_matchup_spot_skill(
     db: Session,
     req: AIMatchupSpotRequest,
+    progress=None,
 ) -> Dict[str, Any]:
     start_ts = time.time()
+
+    def step(phase: str) -> None:
+        if progress:
+            progress(phase)
+
+    step("context")
     require_fresh_catalog(db)
     provider = get_active_ai_provider(db)
     skill_cfg = get_skill_model_and_config(db, "matchup_spot", req.model_id)
@@ -484,6 +491,7 @@ ANALISI MATCHUP SPOT TESTA A TESTA ({fmt.upper()}):
 {_format_entries_with_oracle(entries_b)}
 """.strip()
 
+    step("analysis")
     matchup_out: AIMatchupSpotOutput = provider.generate_structured(
         model_id=skill_cfg["model_id"],
         system_instruction=sys_prompt,
@@ -499,6 +507,7 @@ ANALISI MATCHUP SPOT TESTA A TESTA ({fmt.upper()}):
     )
     if errors:
         raise ValueError("Analisi non salvata: " + "; ".join(errors))
+    step("save")
     duration_ms = int((time.time() - start_ts) * 1000)
     ai_run = AIRun(
         skill_name="matchup_spot",

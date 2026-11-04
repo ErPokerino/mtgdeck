@@ -527,8 +527,17 @@ def _starting_point(ctx: GenerationContext) -> Dict[str, Any]:
     }
 
 
-def run_deck_generation_skill(db: Session, req: AIDeckGenerationRequest) -> Dict[str, Any]:
+def run_deck_generation_skill(
+    db: Session, req: AIDeckGenerationRequest, progress=None
+) -> Dict[str, Any]:
     start_ts = time.time()
+
+    def step(phase: str) -> None:
+        # Called outside try blocks so that a cancellation is never swallowed.
+        if progress:
+            progress(phase)
+
+    step("context")
     require_fresh_catalog(db)
     fmt = req.format_id.lower()
     provider = get_active_ai_provider(db)
@@ -571,6 +580,7 @@ def run_deck_generation_skill(db: Session, req: AIDeckGenerationRequest) -> Dict
         attempt = 0
         while errors and attempt < max_retries:
             attempt += 1
+            step("repair")
             prompt = (
                 f"IL VALIDATORE DEL FORMATO {fmt.upper()} HA RIFIUTATO LA LISTA (tentativo {attempt}):\n"
                 + "\n".join("- " + e for e in errors)
@@ -584,6 +594,7 @@ def run_deck_generation_skill(db: Session, req: AIDeckGenerationRequest) -> Dict
             errors = hard_errors(db, fmt, out, req.build_around_cards, ctx.allowed_colors)
         return out, errors
 
+    step("generation")
     out, errors = until_valid(ask(gen_sys, base_prompt, AIDeckGenerationOutput))
     if errors:
         raise ValueError("Generazione non salvata: " + "; ".join(errors))
@@ -591,6 +602,7 @@ def run_deck_generation_skill(db: Session, req: AIDeckGenerationRequest) -> Dict
     analysis = deck_engine.analyze_list(db, entries, key_cards=req.build_around_cards)
     issues = plan_issues(out, entries, ctx)
 
+    step("analysis")
     critic: Optional[AIDeckCriticOutput] = None
     critic_prompt = (
         evidence_context(db, fmt)
@@ -608,6 +620,7 @@ def run_deck_generation_skill(db: Session, req: AIDeckGenerationRequest) -> Dict
         + "\n\n=== PROPOSTA DEL COSTRUTTORE (JSON) ===\n"
         + out.model_dump_json(indent=1)
     )
+    step("critic")
     try:
         critic = ask(critic_sys, critic_prompt, AIDeckCriticOutput)
     except Exception as exc:  # the list is already valid: a failed review is not fatal
@@ -625,6 +638,7 @@ def run_deck_generation_skill(db: Session, req: AIDeckGenerationRequest) -> Dict
         )
     )
     if needs_revision:
+        step("revision")
         revision["attempted"] = True
         prompt = (
             "=== REVISIONE STRATEGICA ===\n"
@@ -657,6 +671,7 @@ def run_deck_generation_skill(db: Session, req: AIDeckGenerationRequest) -> Dict
     else:
         out.base_archetype = ""
 
+    step("save")
     report = validate_deck_entries(fmt, entries)
     if not report.is_valid:
         raise ValueError("Generazione non salvata: " + "; ".join(i.message for i in report.issues))

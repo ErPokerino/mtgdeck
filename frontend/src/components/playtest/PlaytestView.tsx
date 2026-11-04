@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftRight,
   ChevronDown,
@@ -161,6 +161,70 @@ export function PlaytestView({
     if (top) move(top.uid, "hand");
     else setError("Grimorio vuoto: nessuna carta da pescare.");
   };
+  const nextTurn = () =>
+    commit((g) => {
+      let drawn = false;
+      return {
+        ...g,
+        turn: g.turn + 1,
+        cards: g.cards.map((c) => {
+          if (!drawn && c.zone === "library") {
+            drawn = true;
+            return { ...c, zone: "hand" };
+          }
+          return battlefield(c.zone) ? { ...c, tapped: false } : c;
+        }),
+      };
+    }, "Nuovo turno: STAP e pesca");
+  const untapAll = () =>
+    commit(
+      (g) => ({
+        ...g,
+        cards: g.cards.map((c) =>
+          battlefield(c.zone) ? { ...c, tapped: false } : c,
+        ),
+      }),
+      "STAP globale",
+    );
+  const undo = () => {
+    if (!past.length) return;
+    setGame(past[past.length - 1]);
+    setPast((p) => p.slice(0, -1));
+  };
+  const mulligan = () => {
+    if (game.opening && game.mulligans < 7) start(game.cards, game.mulligans + 1);
+  };
+  // Keyboard shortcuts: D draw, T next turn, U untap, M mulligan, Z undo.
+  const shortcuts = useRef<Record<string, () => void>>({});
+  shortcuts.current = {
+    d: () => !openingBlocked && counts.library && draw(),
+    t: () => !openingBlocked && nextTurn(),
+    u: () => !openingBlocked && untapAll(),
+    m: mulligan,
+    z: undo,
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (
+        e.altKey ||
+        e.metaKey ||
+        (e.ctrlKey && e.key.toLowerCase() !== "z") ||
+        (el &&
+          (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) ||
+            el.isContentEditable)) ||
+        document.querySelector('[aria-modal="true"]')
+      )
+        return;
+      const action = shortcuts.current[e.key.toLowerCase()];
+      if (action) {
+        e.preventDefault();
+        action();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const flip = (inst: Instance) => {
     const face = inst.face ? 0 : 1;
     const type = faceCard(inst.card, face).type_line;
@@ -532,6 +596,8 @@ export function PlaytestView({
               className="btn-primary"
               onClick={draw}
               disabled={openingBlocked || !counts.library}
+              aria-keyshortcuts="D"
+              title="Scorciatoia: D"
             >
               <Layers size={15} />
               Pesca 1 ({counts.library})
@@ -539,39 +605,18 @@ export function PlaytestView({
             <button
               className="btn-secondary"
               disabled={openingBlocked}
-              onClick={() =>
-                commit((g) => {
-                  let drawn = false;
-                  return {
-                    ...g,
-                    turn: g.turn + 1,
-                    cards: g.cards.map((c) => {
-                      if (!drawn && c.zone === "library") {
-                        drawn = true;
-                        return { ...c, zone: "hand" };
-                      }
-                      return battlefield(c.zone) ? { ...c, tapped: false } : c;
-                    }),
-                  };
-                }, "Nuovo turno: STAP e pesca")
-              }
+              onClick={nextTurn}
+              aria-keyshortcuts="T"
+              title="Scorciatoia: T"
             >
               Turno {game.turn + 1} · STAP + pesca
             </button>
             <button
               className="btn-secondary"
               disabled={openingBlocked}
-              onClick={() =>
-                commit(
-                  (g) => ({
-                    ...g,
-                    cards: g.cards.map((c) =>
-                      battlefield(c.zone) ? { ...c, tapped: false } : c,
-                    ),
-                  }),
-                  "STAP globale",
-                )
-              }
+              onClick={untapAll}
+              aria-keyshortcuts="U"
+              title="Scorciatoia: U"
             >
               STAP tutto
             </button>
@@ -591,14 +636,16 @@ export function PlaytestView({
             <button
               className="btn-secondary"
               disabled={!past.length}
-              onClick={() => {
-                setGame(past[past.length - 1]);
-                setPast((p) => p.slice(0, -1));
-              }}
+              onClick={undo}
+              aria-keyshortcuts="Z Control+Z"
+              title="Scorciatoia: Z"
             >
               <Undo2 size={15} />
               Annulla
             </button>
+            <p className="text-xs text-slate-400" aria-hidden="true">
+              Tasti: D pesca · T turno · U stappa · M mulligan · Z annulla
+            </p>
             <label className="ml-auto flex shrink-0 items-center gap-2 text-xs text-slate-400">
               Carte{" "}
               <input
@@ -629,7 +676,9 @@ export function PlaytestView({
                 <button
                   className="btn-secondary"
                   disabled={game.mulligans >= 7}
-                  onClick={() => start(game.cards, game.mulligans + 1)}
+                  onClick={mulligan}
+                  aria-keyshortcuts="M"
+                  title="Scorciatoia: M"
                 >
                   Mulligan a {Math.max(0, 6 - game.mulligans)}
                 </button>
@@ -832,7 +881,7 @@ export function PlaytestView({
                         </div>
                       ))}
                     {!counts[rightZone] && (
-                      <p className="text-sm text-slate-500 py-8 text-center">
+                      <p className="text-sm text-slate-400 py-8 text-center">
                         Zona vuota
                       </p>
                     )}

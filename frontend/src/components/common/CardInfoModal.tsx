@@ -4,6 +4,7 @@ import { api } from "../../api/client";
 import type { Card, CardRulingInfo, FormatId } from "../../types";
 import { ManaCost, OracleTextRenderer, SetSymbol } from "./ManaCost";
 import { archetypeUsageLabel } from "./metaLabels";
+import { useDialog } from "../../hooks/useDialog";
 
 interface CardInfoModalProps {
   card: Card | null;
@@ -45,13 +46,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
       cancelled = true;
     };
   }, [card?.oracle_id, formatId]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    if (card) window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [card, onClose]);
+  const dialog = useDialog(!!card, onClose);
   if (!card) return null;
 
   const hasBackFace =
@@ -86,11 +81,11 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
             ? "bg-emerald-950/40 border-emerald-700/40 text-emerald-300"
             : isBanned
               ? "bg-rose-950/50 border-rose-700/50 text-rose-300"
-              : "bg-[#111622] border-[#1F273A] text-slate-500"
+              : "bg-[#111622] border-[#1F273A] text-slate-400"
         }`}
       >
         <span className="capitalize font-medium">{fmt}</span>
-        <span className="font-mono-tech text-[10px] uppercase font-bold">
+        <span className="font-mono-tech text-[11px] uppercase font-bold">
           {isLegal ? "LEGALE" : isBanned ? "BANDITA" : "NON LEGALE"}
         </span>
       </div>
@@ -103,7 +98,12 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-[#0D111A] border border-[#26314A] rounded-xl max-w-3xl w-full shadow-2xl overflow-hidden"
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="card-info-title"
+        tabIndex={-1}
+        className="bg-[#0D111A] border border-[#26314A] rounded-xl max-w-3xl w-full shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top bar */}
@@ -117,7 +117,9 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
             />
             <div>
               <div className="flex items-center gap-2.5">
-                <h3 className="font-bold text-base text-white">{card.name}</h3>
+                <h3 id="card-info-title" className="font-bold text-base text-white">
+                  {card.name}
+                </h3>
                 <ManaCost cost={card.mana_cost} size="md" />
               </div>
               <p className="text-xs text-slate-400">
@@ -149,7 +151,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-xs text-slate-500 p-4 text-center">
+                <div className="w-full h-full flex items-center justify-center text-xs text-slate-400 p-4 text-center">
                   {card.name}
                 </div>
               )}
@@ -218,7 +220,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                   {knowledge.tags.map((tag) => (
                     <span
                       key={tag}
-                      className="px-1.5 py-0.5 rounded bg-[#141B2B] border border-[#26324D] text-[10px] font-mono-tech text-slate-300"
+                      className="px-1.5 py-0.5 rounded bg-[#141B2B] border border-[#26324D] text-[11px] font-mono-tech text-slate-300"
                     >
                       {tag}
                     </span>
@@ -235,7 +237,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                 <ul className="mt-2 space-y-2 text-xs text-slate-300 leading-relaxed">
                   {knowledge.rulings.map((r, i) => (
                     <li key={i}>
-                      <span className="text-slate-500 font-mono-tech mr-1.5">
+                      <span className="text-slate-400 font-mono-tech mr-1.5">
                         {r.published_at}
                       </span>
                       {r.comment}
@@ -275,7 +277,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                     Statistiche Metagame ({formatId})
                   </span>
                 </div>
-                <span className="text-[10px] font-mono-tech text-slate-400">
+                <span className="text-[11px] font-mono-tech text-slate-400">
                   Fonte: liste MTGTop8
                 </span>
               </div>
@@ -284,7 +286,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                 <>
                   <div className="grid grid-cols-3 gap-2">
                     <div className="p-2.5 rounded bg-[#0A0D15] border border-[#1B2336]">
-                      <div className="text-[10px] text-slate-400">
+                      <div className="text-[11px] text-slate-400">
                         Presenza Totale
                       </div>
                       <div className="text-base font-bold font-mono-tech text-sky-400">
@@ -292,7 +294,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                       </div>
                     </div>
                     <div className="p-2.5 rounded bg-[#0A0D15] border border-[#1B2336]">
-                      <div className="text-[10px] text-slate-400">
+                      <div className="text-[11px] text-slate-400">
                         Mainboard
                       </div>
                       <div className="text-sm font-bold font-mono-tech text-emerald-400">
@@ -303,7 +305,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                       </div>
                     </div>
                     <div className="p-2.5 rounded bg-[#0A0D15] border border-[#1B2336]">
-                      <div className="text-[10px] text-slate-400">
+                      <div className="text-[11px] text-slate-400">
                         Sideboard
                       </div>
                       <div className="text-sm font-bold font-mono-tech text-amber-400">

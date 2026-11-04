@@ -24,6 +24,10 @@ Al primo avvio vengono creati database e catalogo. La sincronizzazione iniziale 
 
 - **Deck Builder**: una nuova lista è una bozza nel browser. “Salva” la memorizza nel server e conserva una versione. La bozza viene recuperata dopo un reload e rimane disponibile quando cambi sezione.
 - **Generazione AI e importazione**: il mazzo viene salvato automaticamente. Le carte non riconosciute bloccano l'importazione, evitando liste parziali.
+- **Statistiche del builder**: fonti per colore rispetto ai requisiti di Karsten, terre tappate, probabilità di terre e interazione in main e sideboard, ricalcolate a ogni modifica. Eliminare una carta mostra "Annulla".
+- **Ricerca carte**: "/" porta il focus sulla ricerca. C'è un filtro per funzione (rimozione, counter, pescata, hate al cimitero…, dai tag Scryfall) e i filtri attivi compaiono come chip rimovibili.
+- **Generazione e Analisi matchup** girano sul server come lavori persistenti: AI Studio mostra la fase reale, permette di annullare e ritrova il lavoro dopo un reload. Dal Metagame, "Costruisci da questo archetipo" apre la generazione con quel punto di partenza.
+- **Playtest**: D pesca, T nuovo turno, U stappa, M mulligan, Z annulla.
 - **Mazzi e guide → Mazzi attivi**: cerca, apri, duplica, avvia il playtest, consulta le versioni o archivia una lista. Archiviare la toglie dai selettori, mantenendo dati e storico.
 - **Archiviati**: ripristina una lista oppure eliminala definitivamente dopo conferma.
 - **Guide salvate**: ogni generazione conserva una versione indipendente con la lista analizzata, modello, data e contesto. Anche le liste incollate hanno una guida archiviata. Puoi leggere ed esportare ogni versione in PDF con indice navigabile, lista, piani e tabelle di sidata.

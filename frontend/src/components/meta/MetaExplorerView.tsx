@@ -30,12 +30,14 @@ interface MetaExplorerViewProps {
   formatId: FormatId;
   onLoadDeckToBuilder: (deck: DeckDetail) => void;
   onOpenMatchupSpotWithArchetype?: (arch: MetaArchetypeInfo) => void;
+  onBuildFromArchetype?: (arch: MetaArchetypeInfo) => void;
 }
 
 export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
   formatId,
   onLoadDeckToBuilder,
   onOpenMatchupSpotWithArchetype,
+  onBuildFromArchetype,
 }) => {
   const [metaData, setMetaData] = useState<FormatMetaResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -441,7 +443,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                         <div>
                           <div className="flex items-center gap-2">
                             <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-mono-tech font-bold uppercase ${
+                              className={`px-2 py-0.5 rounded text-[11px] font-mono-tech font-bold uppercase ${
                                 arch.tier === 1
                                   ? "bg-[#C8AA6E]/20 text-[#F3E5C8] border border-[#C8AA6E]/50"
                                   : "bg-slate-800 text-slate-300 border border-slate-700"
@@ -469,7 +471,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                       {/* Stats Row: Meta Share, Winrate, Decks/Matches */}
                       <div className="grid grid-cols-3 gap-2 pt-1">
                         <div className="p-2.5 rounded-lg bg-[#090C12] border border-[#192132]">
-                          <div className="text-[10px] text-slate-400">
+                          <div className="text-[11px] text-slate-400">
                             Quota meta
                           </div>
                           <div className="text-base font-bold font-mono-tech text-[#F3E5C8]">
@@ -484,11 +486,11 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                               : undefined
                           }
                         >
-                          <div className="text-[10px] text-slate-400">
+                          <div className="text-[11px] text-slate-400">
                             Winrate
                           </div>
                           {arch.winrate_pct == null ? (
-                            <div className="text-base font-bold font-mono-tech text-slate-500">
+                            <div className="text-base font-bold font-mono-tech text-slate-400">
                               n/d
                             </div>
                           ) : (
@@ -506,7 +508,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                           )}
                         </div>
                         <div className="p-2.5 rounded-lg bg-[#090C12] border border-[#192132]">
-                          <div className="text-[10px] text-slate-400">
+                          <div className="text-[11px] text-slate-400">
                             Liste analizzate
                           </div>
                           <div className="text-sm font-bold font-mono-tech text-slate-200">
@@ -585,6 +587,17 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                           <span>Analisi matchup AI</span>
                         </button>
                       )}
+                      {onBuildFromArchetype && (
+                        <button
+                          type="button"
+                          onClick={() => onBuildFromArchetype(arch)}
+                          className="py-2 px-3 rounded-lg bg-[#151D2E] hover:bg-[#1E2942] border border-[#C8AA6E]/40 text-xs font-medium text-[#F3E5C8] flex items-center gap-1 cursor-pointer"
+                          title="Genera una lista ottimizzata partendo dal consenso di questo archetipo"
+                        >
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          <span>Costruisci da questo archetipo</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -602,7 +615,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
               <div className="rounded-xl bg-[#0D111A] border border-[#1E2638] p-5 space-y-4 sticky top-4">
                 <div className="flex items-start justify-between gap-2 border-b border-[#1E2638] pb-3">
                   <div>
-                    <span className="text-[10px] font-mono-tech uppercase text-[#C8AA6E]">
+                    <span className="text-[11px] font-mono-tech uppercase text-[#C8AA6E]">
                       Ispezione Archetipo Live • Tier {selectedArch.tier}
                     </span>
                     <h3 className="font-display font-bold text-lg text-[#F3E5C8]">
@@ -787,7 +800,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                           return (
                             <div
                               key={lIdx}
-                              className="pt-1.5 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-sky-400 border-b border-[#182032]"
+                              className="pt-1.5 pb-0.5 text-[11px] font-bold uppercase tracking-wider text-sky-400 border-b border-[#182032]"
                             >
                               {trimmed === "Deck"
                                 ? "MAINBOARD (60)"
@@ -821,7 +834,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                                 {cName}
                               </span>
                             </span>
-                            <span className="text-[9px] text-slate-500 group-hover:text-sky-300 opacity-0 group-hover:opacity-100">
+                            <span className="text-[11px] text-slate-400 group-hover:text-sky-300 opacity-0 group-hover:opacity-100">
                               Info →
                             </span>
                           </button>
@@ -906,7 +919,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                     <div className="flex items-center gap-2">
                       <ColorBadges colors={rowArch.colors} size="sm" />
                       <span>{rowArch.name}</span>
-                      <span className="ml-auto text-[10px] font-mono-tech text-[#C8AA6E]">
+                      <span className="ml-auto text-[11px] font-mono-tech text-[#C8AA6E]">
                         {rowArch.meta_share_pct.toFixed(1)}%
                       </span>
                     </div>
@@ -916,7 +929,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                       return (
                         <td
                           key={colArch.id}
-                          className="p-3 text-center border border-[#1E2638] bg-[#080A0F] text-slate-600 font-mono-tech"
+                          className="p-3 text-center border border-[#1E2638] bg-[#080A0F] text-slate-400 font-mono-tech"
                         >
                           MIRROR (50%)
                         </td>
@@ -930,7 +943,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                       return (
                         <td
                           key={colArch.id}
-                          className="p-3 text-center border border-[#1E2638] text-slate-500 font-mono-tech"
+                          className="p-3 text-center border border-[#1E2638] text-slate-400 font-mono-tech"
                         >
                           —
                         </td>
@@ -954,7 +967,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                         className={`p-3 text-center border border-[#1E2638] font-mono-tech ${cellColor}`}
                       >
                         <div className="text-sm">{wr.toFixed(1)}%</div>
-                        <div className="text-[10px] opacity-70">
+                        <div className="text-[11px] opacity-70">
                           {matches
                             ? `${matches} match osservati`
                             : "Stima · nessun campione"}
@@ -1206,7 +1219,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                                 {tc.card_name}
                               </span>
                               {tc.card?.set_code && (
-                                <span className="text-[10px] font-mono-tech uppercase text-slate-500">
+                                <span className="text-[11px] font-mono-tech uppercase text-slate-400">
                                   {tc.card.set_code} • {tc.card.rarity}
                                 </span>
                               )}
@@ -1237,7 +1250,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                               </span>
                             </div>
                           ) : (
-                            <span className="text-slate-600">—</span>
+                            <span className="text-slate-400">—</span>
                           )}
                         </td>
                         <td className="py-2.5 px-4 text-right font-mono-tech">
@@ -1251,7 +1264,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                               </span>
                             </div>
                           ) : (
-                            <span className="text-slate-600">—</span>
+                            <span className="text-slate-400">—</span>
                           )}
                         </td>
                         <td className="py-2.5 px-4">

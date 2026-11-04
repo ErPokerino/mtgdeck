@@ -329,11 +329,16 @@ def analyze_stateless_deck(
         col_accum.extend(c.colors or [])
     sorted_cols, col_label = get_color_combination_label(col_accum)
     arena_txt, mtgo_txt = export_decklist_formats(resolved)
+    from app.services.deck_engine import analyze_list
+
+    has_main = any(board == "main" for _, board, _ in resolved)
     return {
         "colors": sorted_cols,
         "color_label": col_label,
         "validation": validation,
         "analytics": analytics,
+        # Sources vs Karsten requirements, tapped lands, interaction and odds.
+        "competitive": analyze_list(db, resolved) if has_main else None,
         "export": {"arena_format": arena_txt, "mtgo_format": mtgo_txt},
     }
 

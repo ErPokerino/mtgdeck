@@ -216,7 +216,7 @@ export const ResizableSplitPane: React.FC<ResizableSplitPaneProps> = ({
         {isHoriz && (
           <div
             onMouseDown={(e) => e.stopPropagation()}
-            className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto transition-opacity absolute top-2 z-30 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-[#0D111A]/95 border border-[#2B3856] shadow-xl text-[9px] font-mono-tech text-slate-300"
+            className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto transition-opacity absolute top-2 z-30 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-[#0D111A]/95 border border-[#2B3856] shadow-xl text-[11px] font-mono-tech text-slate-300"
           >
             <button
               type="button"

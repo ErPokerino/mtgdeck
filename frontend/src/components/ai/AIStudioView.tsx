@@ -24,6 +24,8 @@ import { GuideJobStatus } from "./GuideJobStatus";
 import { GuideReader } from "../library/GuideReader";
 import { CardInfoModal } from "../common/CardInfoModal";
 import { GenerationReport } from "./GenerationReport";
+import { AIJobStatus } from "./AIJobStatus";
+import { isActiveJob, useAIJob } from "../../hooks/useAIJob";
 
 interface Props {
   formatId: FormatId;
@@ -34,6 +36,8 @@ interface Props {
   onChangeModel: (id: string) => void;
   preselectedOpponentArchetype?: MetaArchetypeInfo | null;
   onClearPreselectedOpponent?: () => void;
+  preselectedBaseArchetype?: MetaArchetypeInfo | null;
+  onClearPreselectedBase?: () => void;
   onOpenDeckInBuilder: (deck: DeckDetail) => void;
   onOpenDeckInPlaytest: (deck: DeckDetail) => void;
   onOpenSettings: () => void;
@@ -85,6 +89,8 @@ export function AIStudioView({
   onChangeModel,
   preselectedOpponentArchetype,
   onClearPreselectedOpponent,
+  preselectedBaseArchetype,
+  onClearPreselectedBase,
   onOpenDeckInBuilder,
   onOpenDeckInPlaytest,
   onOpenSettings,
@@ -106,7 +112,6 @@ export function AIStudioView({
   const [generation, setGeneration] = useState<DeckGenerationResult | null>(
       null,
     ),
-    [genLoading, setGenLoading] = useState(false),
     [genError, setGenError] = useState("");
   const [guideDeck, setGuideDeck] = useState<number | "custom">(
       activeDeck?.id || "custom",
@@ -209,7 +214,6 @@ export function AIStudioView({
     [archB, setArchB] = useState<number | "">(""),
     [textB, setTextB] = useState("");
   const [matchup, setMatchup] = useState<any>(null),
-    [matchLoading, setMatchLoading] = useState(false),
     [matchError, setMatchError] = useState(""),
     [loadError, setLoadError] = useState("");
   const available =
@@ -255,6 +259,26 @@ export function AIStudioView({
       onGuideIntentHandled?.();
     }
   }, [openGuide, activeDeck?.id]);
+  const chooseBase = (id: number | "") => {
+    setBaseArch(id);
+    const arch = archetypes.find((a) => a.id === id);
+    if (!arch) return;
+    const preset = combinations.find(
+      ([, cols]) =>
+        cols.length === arch.colors.length &&
+        cols.every((c) => arch.colors.includes(c)),
+    );
+    setCustomColors(arch.colors);
+    setColor(preset?.[0] || "Personalizzato");
+    if (archetypeOptions.includes(arch.category)) setArchetype(arch.category);
+  };
+  useEffect(() => {
+    if (preselectedBaseArchetype && archetypes.length) {
+      setTab("generator");
+      chooseBase(preselectedBaseArchetype.id);
+      onClearPreselectedBase?.();
+    }
+  }, [preselectedBaseArchetype, archetypes]);
   useEffect(() => {
     if (preselectedOpponentArchetype) {
       setTab("matchup");
@@ -327,16 +351,32 @@ export function AIStudioView({
       if (c) setInspected(c);
     } catch {}
   };
+  const [genJob, setGenJob] = useAIJob(formatId, "deck_generation", (job) => {
+    if (job.status === "completed") {
+      setGeneration(job.result);
+      loadDecks();
+    } else if (job.status === "failed") setGenError(job.error || "");
+  });
+  const [matchJob, setMatchJob] = useAIJob(formatId, "matchup_spot", (job) => {
+    if (job.status === "completed") setMatchup(job.result);
+    else if (job.status === "failed") setMatchError(job.error || "");
+  });
+  const genLoading = isActiveJob(genJob);
+  const matchLoading = isActiveJob(matchJob);
+  const cancelJob = async (id: number, setJob: (j: any) => void) => {
+    try {
+      setJob(await api.cancelAIJob(id));
+    } catch {}
+  };
   const runGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setGenLoading(true);
     setGenError("");
     try {
       const colors =
         color === "Personalizzato"
           ? customColors
           : combinations.find(([n]) => n === color)?.[1] || [];
-      const result = await api.generateDeckAI({
+      const job = await api.startDeckGenerationJob({
         format_id: formatId,
         prompt,
         archetype,
@@ -347,12 +387,9 @@ export function AIStudioView({
         model_id: modelId,
         save_deck: true,
       });
-      setGeneration(result);
-      await loadDecks();
+      setGenJob(job);
     } catch (e: any) {
       setGenError(e.message);
-    } finally {
-      setGenLoading(false);
     }
   };
   const startGuide = async (legacyRunId?: number) => {
@@ -405,10 +442,9 @@ export function AIStudioView({
   };
   const runMatch = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMatchLoading(true);
     setMatchError("");
     try {
-      const r = await api.analyzeSpotMatchupAI({
+      const job = await api.startMatchupJob({
         format_id: formatId,
         deck_a_id: deckA === "custom" ? undefined : deckA,
         deck_a_name: decks.find((d) => d.id === deckA)?.name || "Mazzo A",
@@ -424,11 +460,9 @@ export function AIStudioView({
               : "Lista incollata",
         model_id: modelId,
       });
-      setMatchup(r);
+      setMatchJob(job);
     } catch (e: any) {
       setMatchError(e.message);
-    } finally {
-      setMatchLoading(false);
     }
   };
   const deckSelect = (
@@ -588,21 +622,11 @@ export function AIStudioView({
               <select
                 className="field w-full block mt-2"
                 value={baseArch}
-                onChange={(e) => {
-                  const id = e.target.value === "" ? "" : Number(e.target.value);
-                  setBaseArch(id);
-                  const arch = archetypes.find((a) => a.id === id);
-                  if (!arch) return;
-                  const preset = combinations.find(
-                    ([, cols]) =>
-                      cols.length === arch.colors.length &&
-                      cols.every((c) => arch.colors.includes(c)),
-                  );
-                  setCustomColors(arch.colors);
-                  setColor(preset?.[0] || "Personalizzato");
-                  if (archetypeOptions.includes(arch.category))
-                    setArchetype(arch.category);
-                }}
+                onChange={(e) =>
+                  chooseBase(
+                    e.target.value === "" ? "" : Number(e.target.value),
+                  )
+                }
               >
                 <option value="">Brew: parti dalla tua tesi</option>
                 {archetypes.length > 0 && (
@@ -760,12 +784,18 @@ export function AIStudioView({
               />
             </label>
             {runButton(genLoading, "Genera e salva mazzo")}
-            <p className="text-xs text-slate-500">
-              L’analisi può richiedere alcuni minuti. Puoi consultare altre
-              sezioni o formati: il risultato resta qui. Se ricarichi la pagina,
-              il mazzo comparirà comunque in Mazzi e guide.
+            <p className="text-xs text-slate-400">
+              L’analisi richiede alcuni minuti e continua sul server: puoi
+              consultare altre sezioni o ricaricare la pagina. Il mazzo viene
+              salvato in Mazzi e guide.
             </p>
           </form>
+          {genJob && isActiveJob(genJob) && (
+            <AIJobStatus
+              job={genJob}
+              onCancel={() => cancelJob(genJob.id, setGenJob)}
+            />
+          )}
           {genError && (
             <p className="notice-error" role="alert">
               {genError}
@@ -1005,6 +1035,12 @@ export function AIStudioView({
                 (modeB === "saved" && !deckB),
             )}
           </form>
+          {matchJob && isActiveJob(matchJob) && (
+            <AIJobStatus
+              job={matchJob}
+              onCancel={() => cancelJob(matchJob.id, setMatchJob)}
+            />
+          )}
           {matchError && (
             <p className="notice-error" role="alert">
               {matchError}

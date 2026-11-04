@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Check, Copy, Download, FileText, Upload, X } from "lucide-react";
 import type { FormatId } from "../../types";
+import { useDialog } from "../../hooks/useDialog";
 
 interface ImportExportModalProps {
   isOpen: boolean;
@@ -125,6 +126,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const dialog = useDialog(isOpen, onClose);
   if (!isOpen) return null;
 
   const currentExportText = exportType === "arena" ? arenaText : mtgoText;
@@ -166,13 +168,21 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-[#0D111A] border border-[#242F46] rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden"
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="import-export-title"
+        tabIndex={-1}
+        className="bg-[#0D111A] border border-[#242F46] rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 bg-[#121826] border-b border-[#1E2638] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-[#C8AA6E]" />
-            <h2 className="font-display font-bold text-base text-[#F3E5C8]">
+            <h2
+              id="import-export-title"
+              className="font-display font-bold text-base text-[#F3E5C8]"
+            >
               Import / Export Mazzo (MTG Arena & MTGO)
             </h2>
           </div>

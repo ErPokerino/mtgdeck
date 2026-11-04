@@ -386,6 +386,23 @@ class GuideJob(Base):
     finished_at = Column(DateTime(timezone=True), nullable=True)
 
 
+class AIJob(Base):
+    """Durable deck generation and matchup analysis: survive reloads, report phases, can be cancelled."""
+
+    __tablename__ = "ai_jobs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(32), nullable=False, index=True)  # deck_generation | matchup_spot
+    format_id = Column(String(32), nullable=False, index=True)
+    request_json = Column(JSON, nullable=False)
+    status = Column(String(32), default="queued", nullable=False)
+    phase = Column(String(64), default="queued", nullable=False)
+    error = Column(Text, nullable=True)
+    result_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 

@@ -47,7 +47,7 @@ export const ManaCost: React.FC<ManaCostProps> = ({
         return (
           <React.Fragment key={pIdx}>
             {pIdx > 0 && (
-              <span className="text-slate-500 mx-1 font-mono-tech text-xs">
+              <span className="text-slate-400 mx-1 font-mono-tech text-xs">
                 //
               </span>
             )}

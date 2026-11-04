@@ -2,8 +2,8 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import AIRun, GuideJob, utcnow
-from app.services import guide_jobs
+from app.models import AIJob, AIRun, GuideJob, utcnow
+from app.services import ai_jobs, guide_jobs
 from app.skills.deck_generation import run_deck_generation_skill
 from app.skills.runner import (
     run_deck_guide_skill,
@@ -89,6 +89,55 @@ def resume_guide_job(job_id: int, db: Session = Depends(get_db)):
     return start_guide_job(
         AIDeckGuideRequest.model_validate(job.request_json), resume_id=job_id, db=db
     )
+
+
+@router.post("/jobs/deck-generation")
+def start_deck_generation_job(
+    payload: AIDeckGenerationRequest, db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    try:
+        return ai_jobs.create_job(db, "deck_generation", payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.post("/jobs/matchup-spot")
+def start_matchup_job(
+    payload: AIMatchupSpotRequest, db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    try:
+        return ai_jobs.create_job(db, "matchup_spot", payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.get("/jobs")
+def list_ai_jobs(format_id: str, kind: str, db: Session = Depends(get_db)):
+    """Active jobs plus the latest finished one: enough to resume after a reload."""
+    jobs = (
+        db.query(AIJob)
+        .filter(AIJob.format_id == format_id, AIJob.kind == kind)
+        .order_by(AIJob.id.desc())
+        .limit(5)
+        .all()
+    )
+    return {"jobs": [ai_jobs.public_job(j) for j in jobs]}
+
+
+@router.get("/jobs/{job_id}")
+def get_ai_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(AIJob, job_id)
+    if not job:
+        raise HTTPException(404, "Analisi non trovata")
+    return ai_jobs.public_job(job)
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_ai_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(AIJob, job_id)
+    if not job:
+        raise HTTPException(404, "Analisi non trovata")
+    return ai_jobs.cancel_job(db, job)
 
 
 @router.post("/generate-deck")

@@ -453,3 +453,18 @@ export interface DeckGenerationResult {
     duration_ms: number;
   };
 }
+
+/** Durable deck generation or matchup analysis running on the server. */
+export interface AIJob {
+  id: number;
+  kind: "deck_generation" | "matchup_spot";
+  format_id: FormatId;
+  label: string;
+  model_id?: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  phase: string;
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+  result: any;
+}

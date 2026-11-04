@@ -382,6 +382,47 @@ Può procedere in parallelo alle Fasi 1–3. Stima: 5–7 giorni.
 - Scorciatoia "/" per il focus.
 - Una sola select di ordinamento.
 
+### Stato Fase 4 (2026-11-04)
+
+Decisione U5: italiano, con i termini MTG in inglese (main, sideboard, mulligan, on the play), come già nelle guide.
+
+Fatto:
+- **Job persistenti per generazione mazzo e Analisi matchup** (completano G-8). Nuova tabella `ai_jobs` ed endpoint `/api/ai/jobs`. AI Studio mostra la fase reale e il tempo trascorso, permette di annullare e si riaggancia al lavoro dopo un reload o un cambio di sezione. Un annullamento prima del salvataggio non crea il mazzo; dopo un riavvio del backend i job in corso risultano interrotti.
+- **U2.** Il pannello del builder mostra fonti per colore rispetto ai requisiti di Karsten (con la carta più esigente), terre sempre tappate e condizionali, probabilità di terre nelle 7 iniziali e al turno 3, interazione in main e sideboard. Usa la stessa analisi deterministica della generazione, calcolata dal backend a ogni modifica.
+- **U3.**
+  - Hook `useDialog` comune: Esc chiude, il focus resta nella finestra, entra all'apertura e torna al controllo d'origine. Applicato a Impostazioni, Import/Export, scheda carta e alle tre finestre della libreria.
+  - La scelta del modello è un `button` con `aria-pressed`.
+  - Label sulle select del builder.
+- **U4.**
+  - Testi `slate-500/600` portati a `slate-400` (circa 7:1 sullo sfondo).
+  - Testo minimo a 11 px al posto di 9-10 px; 12 px non entra nei badge compatti senza rifare il layout.
+- **U6.**
+  - La bozza vuota mostra uno stato neutro ("Bozza vuota") invece degli errori in ambra.
+  - Eliminare una carta dal mazzo mostra un toast con "Annulla".
+  - Lo skeleton della ricerca c'era già dalla Fase 0.
+- **U8.** Scorciatoie del playtest: D pesca, T nuovo turno, U stappa, M mulligan, Z annulla. Sono ignorate mentre si scrive o con una finestra aperta e annunciate con `aria-keyshortcuts`.
+- **U9.**
+  - Filtro per funzione (rimozione, counter, pescata, hate al cimitero, ramp…), basato sui tag Scryfall.
+  - Scorciatoia "/" per la ricerca.
+  - Chip dei filtri attivi, rimovibili singolarmente.
+- **Collegamento Metagame → AI Studio.** "Costruisci da questo archetipo" apre la generazione con il consenso di quell'archetipo come punto di partenza.
+
+**Test.** 6 test in `backend/tests/test_phase4_jobs.py`, 103 in tutto.
+
+**Verifiche nel browser sulla copia del database:**
+- pannello dei requisiti su The Rock;
+- toast "Annulla";
+- AI Studio che si riaggancia a un job avviato altrove e mostra il risultato a fine lavoro;
+- scorciatoie del playtest.
+
+Restano aperti:
+- **U1.** Barra fissa in basso su mobile con Salva: oggi il contatore 60/15 è nella scheda "Mazzo".
+- **U2.** Vista a pile visive per costo o tipo.
+- **U4.** Header compatto su mobile e controllo dell'overflow orizzontale in Metagame.
+- **U5.** Revisione sistematica dei termini in tutta l'app.
+- **U7.** Intestazioni sticky. La matrice euristica non viene più generata.
+- **U8.** Trascinamento touch nel playtest: le mosse funzionano con tocco e selezione, ma non con il drag.
+
 ---
 
 ## 7. Fase 5 — Misurare la qualità

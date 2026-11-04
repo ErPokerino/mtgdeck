@@ -71,6 +71,8 @@ export const App: React.FC = () => {
   const [preselectedSetCode, setPreselectedSetCode] = useState<string | null>(
     initialNav.setCode,
   );
+  const [preselectedBaseArch, setPreselectedBaseArch] =
+    useState<MetaArchetypeInfo | null>(null);
   const [preselectedOpponentArch, setPreselectedOpponentArch] =
     useState<MetaArchetypeInfo | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
@@ -418,11 +420,14 @@ export const App: React.FC = () => {
               setPreselectedOpponentArch(arch);
               navigateTo({ tab: "ai_studio" });
             }}
+            onBuildFromArchetype={(arch) => {
+              setPreselectedBaseArch(arch);
+              navigateTo({ tab: "ai_studio" });
+            }}
           />
         )}
 
-        {/* One instance per visited format: generation and matchup requests are
-            synchronous, so remounting on a format switch would drop their results. */}
+        {/* One instance per visited format keeps forms and results while switching. */}
         {aiStudioFormats.map((fmt) => (
           <div
             key={fmt}
@@ -441,6 +446,10 @@ export const App: React.FC = () => {
               onClearPreselectedOpponent={() =>
                 setPreselectedOpponentArch(null)
               }
+              preselectedBaseArchetype={
+                fmt === selectedFormat ? preselectedBaseArch : null
+              }
+              onClearPreselectedBase={() => setPreselectedBaseArch(null)}
               onOpenDeckInBuilder={(deck) => {
                 setActiveDeck(deck);
                 navigateTo({ tab: "deckbuilder" });

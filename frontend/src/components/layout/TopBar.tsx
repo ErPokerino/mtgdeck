@@ -89,11 +89,11 @@ export const TopBar: React.FC<TopBarProps> = ({
               <span className="font-display font-bold tracking-wider text-sm text-[#F3E5C8]">
                 AETHERDECK
               </span>
-              <span className="text-[10px] font-mono-tech uppercase px-1.5 py-0.5 rounded bg-[#1A2130] text-[#C8AA6E] border border-[#C8AA6E]/30">
+              <span className="text-[11px] font-mono-tech uppercase px-1.5 py-0.5 rounded bg-[#1A2130] text-[#C8AA6E] border border-[#C8AA6E]/30">
                 PRO
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 leading-none">
+            <p className="text-[11px] text-slate-400 leading-none">
               Competitive MTG Workbench
             </p>
           </div>
@@ -128,7 +128,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           data-tour="formats"
           className="flex items-center bg-[#080A0F] p-1 rounded-lg border border-[#1E2638]"
         >
-          <span className="text-[10px] font-mono-tech uppercase tracking-wider text-slate-400 px-2">
+          <span className="text-[11px] font-mono-tech uppercase tracking-wider text-slate-400 px-2">
             Formato:
           </span>
           {(["standard", "pioneer", "modern"] as FormatId[]).map((fmtId) => {
@@ -147,7 +147,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 <span className="capitalize">{fmtId}</span>
                 {info && info.legal_cards_count > 0 && (
                   <span
-                    className={`text-[10px] font-mono-tech px-1 rounded ${
+                    className={`text-[11px] font-mono-tech px-1 rounded ${
                       active
                         ? "bg-black/20 text-[#090B10]"
                         : "bg-[#151B28] text-slate-400"
@@ -275,7 +275,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   ? `${syncStatus.total_cards_in_db.toLocaleString("it-IT")} carte`
                   : "Connessione…"}
               </span>
-              <span className="text-[10px] text-slate-400 hidden xl:inline">
+              <span className="text-[11px] text-slate-400 hidden xl:inline">
                 ({formatLastSync(syncStatus?.scryfall_last_sync)})
               </span>
             </div>

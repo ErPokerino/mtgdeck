@@ -1,4 +1,5 @@
 import type {
+  AIJob,
   AppSettings,
   ArchetypeDetail,
   Card,
@@ -10,6 +11,7 @@ import type {
   FormatId,
   FormatInfo,
   FormatMetaResponse,
+  ListAnalysis,
   SyncStatus,
 } from "../types";
 
@@ -112,6 +114,7 @@ export const api = {
       color_label: string;
       validation: DeckDetail["validation"];
       analytics: DeckDetail["analytics"];
+      competitive: ListAnalysis | null;
       export: { arena_format: string; mtgo_format: string };
     }>("/api/decks/analyze", {
       method: "POST",
@@ -220,6 +223,24 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  startDeckGenerationJob: (payload: Record<string, unknown>) =>
+    apiFetch<AIJob>("/api/ai/jobs/deck-generation", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  startMatchupJob: (payload: Record<string, unknown>) =>
+    apiFetch<AIJob>("/api/ai/jobs/matchup-spot", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listAIJobs: (formatId: FormatId, kind: AIJob["kind"]) =>
+    apiFetch<{ jobs: AIJob[] }>(
+      `/api/ai/jobs?format_id=${formatId}&kind=${kind}`,
+    ),
+  getAIJob: (id: number) => apiFetch<AIJob>(`/api/ai/jobs/${id}`),
+  cancelAIJob: (id: number) =>
+    apiFetch<AIJob>(`/api/ai/jobs/${id}/cancel`, { method: "POST" }),
 
   getSyncStatus: () => apiFetch<SyncStatus>("/api/sync/status"),
 
