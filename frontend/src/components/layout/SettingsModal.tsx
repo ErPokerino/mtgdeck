@@ -208,7 +208,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
               <span className="px-2 py-0.5 rounded text-[11px] font-mono-tech bg-emerald-950/60 text-emerald-300 border border-emerald-700/40 shrink-0">
-                Sempre Attivo
+                Sempre attivo
               </span>
             </div>
           </div>
@@ -271,7 +271,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 disabled={saving}
                 className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#C8AA6E] to-[#A8894C] text-[#090B10] font-bold text-xs shadow-md hover:brightness-110 disabled:opacity-50 cursor-pointer"
               >
-                {saving ? "Salvataggio..." : "Salva Impostazioni"}
+                {saving ? "Salvataggio..." : "Salva impostazioni"}
               </button>
             </div>
           </div>

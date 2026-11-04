@@ -320,7 +320,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           onClick={onOpenSettings}
           className="flex items-center gap-1.5 px-2.5 py-1.5 max-md:min-h-10 rounded-lg bg-[#141A29] hover:bg-[#1C2438] border border-[#26304A] text-xs font-medium text-slate-200 transition-colors cursor-pointer"
-          title="Impostazioni API Key Gemini, Modelli AI e Cloud Provider"
+          title="Impostazioni: chiave Gemini, modelli AI e provider cloud"
           aria-label="Impostazioni"
         >
           <Settings className="w-3.5 h-3.5 text-[#C8AA6E]" />

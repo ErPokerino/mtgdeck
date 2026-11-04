@@ -164,7 +164,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
               >
                 <FlipHorizontal className="w-3.5 h-3.5 text-[#C8AA6E]" />
                 <span>
-                  Gira Carta (Faccia {showBackFace ? "Frontale" : "Posteriore"})
+                  Gira la carta (faccia {showBackFace ? "frontale" : "posteriore"})
                 </span>
               </button>
             )}
@@ -251,7 +251,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#C8AA6E]" />
-                <span>Legalità Competitiva & Limite Copie</span>
+                <span>Legalità e limite di copie</span>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {legalityBadge("standard", card.legality_standard)}
@@ -274,7 +274,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                 <div className="flex items-center gap-1.5 text-xs font-bold text-[#F3E5C8]">
                   <BarChart3 className="w-4 h-4 text-sky-400" />
                   <span className="capitalize">
-                    Statistiche Metagame ({formatId})
+                    Statistiche nel metagame ({formatId})
                   </span>
                 </div>
                 <span className="text-[11px] font-mono-tech text-slate-400">
@@ -287,7 +287,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                   <div className="grid grid-cols-3 gap-2">
                     <div className="p-2.5 rounded bg-[#0A0D15] border border-[#1B2336]">
                       <div className="text-[11px] text-slate-400">
-                        Presenza Totale
+                        Presenza totale
                       </div>
                       <div className="text-base font-bold font-mono-tech text-sky-400">
                         {meta.overall_presence_pct.toFixed(1)}%
@@ -295,7 +295,7 @@ export const CardInfoModal: React.FC<CardInfoModalProps> = ({
                     </div>
                     <div className="p-2.5 rounded bg-[#0A0D15] border border-[#1B2336]">
                       <div className="text-[11px] text-slate-400">
-                        Mainboard
+                        Main
                       </div>
                       <div className="text-sm font-bold font-mono-tech text-emerald-400">
                         {meta.main_presence_pct.toFixed(1)}%{" "}

@@ -1,0 +1,41 @@
+# Glossario dell'interfaccia
+
+Regola generale: l'interfaccia è in **italiano**, con le maiuscole solo a inizio frase ("Tutti i tipi", non "Tutti i Tipi"). I termini di gioco restano in **inglese** quando sono il gergo dei giocatori italiani; i nomi delle carte sono sempre quelli ufficiali inglesi.
+
+## Nomi delle sezioni (invariati)
+
+Deck Builder, Set & Banlist, Metagame, AI Studio, Playtest, Mazzi e guide.
+
+## Termini di gioco
+
+| Usare | Non usare | Note |
+|---|---|---|
+| main | Mainboard, mainboard | "al main", "dal main", "nel main"; "Main" in un'intestazione |
+| sideboard, side | Side Board | "side" solo nelle forme compatte (60/15, "Main + side") |
+| valore di mana, MV | CMC, costo convertito | traduzione ufficiale di *mana value*; "MV" solo negli spazi stretti |
+| curva di mana | curve | |
+| magie | spell | "Magie" per le carte non terra, "Terre" per le terre |
+| tappa, stappa | TAP, STAP | "Stappa tutto", "Nuovo turno: stappa e pesca" |
+| mulligan, London mulligan | | |
+| on the play, on the draw | in gioco, in pesca | |
+| matchup, beatdown, flex slot | | gergo competitivo |
+| sidata, piano di sideboard | sideboarding | |
+| archetipo, campo atteso, quota | meta share | "quota" è la percentuale del meta |
+| lista di consenso | sample deck, lista campione | lista aggregata dalle liste da torneo |
+| mazzo di esempio | sample | le liste precaricate in Import/Export |
+| Common, Uncommon, Rare, Mythic | Mythic Rare | rarità in inglese, come sulle carte |
+| Creature, Instant, Sorcery, Land… | | tipi in inglese nei filtri, perché coincidono con il testo delle carte |
+
+## Termini dell'app
+
+| Usare | Non usare |
+|---|---|
+| Guida AI | AI Guide / Build |
+| Statistiche del mazzo | Telemetria |
+| Azzera filtri | Reset filtri, Resetta |
+| Scheda carta | Info carta |
+| Punto di partenza, brew | |
+| Analisi matchup | Matchup spot |
+| Punti da verificare | Warning |
+
+Quando aggiungi un testo all'interfaccia, controlla questa tabella; se introduci un termine nuovo, aggiungilo qui.

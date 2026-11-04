@@ -478,7 +478,7 @@ export function GuideReader({
                   <div className="grid md:grid-cols-2 gap-4">
                     {[
                       [inf, "IN · dalla sideboard", "text-emerald-300"],
-                      [outf, "OUT · dal mainboard", "text-rose-300"],
+                      [outf, "OUT · dal main", "text-rose-300"],
                     ].map(([field, label, color]) => (
                       <div key={field} className="rounded-lg bg-black/20 p-4">
                         <h4 className={`${color} font-bold mb-3`}>

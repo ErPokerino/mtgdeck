@@ -88,7 +88,7 @@ export const FormatExplorerView: React.FC<FormatExplorerViewProps> = ({
           </div>
           <div className="px-4 py-2.5 rounded-lg bg-[#090C14] border border-[#1E2638] text-center">
             <div className="text-[11px] font-mono-tech uppercase text-slate-400">
-              Carte Legali
+              Carte legali
             </div>
             <div className="text-lg font-bold font-mono-tech text-emerald-400">
               {formatDetail.legal_cards_count.toLocaleString("it-IT")}
@@ -96,7 +96,7 @@ export const FormatExplorerView: React.FC<FormatExplorerViewProps> = ({
           </div>
           <div className="px-4 py-2.5 rounded-lg bg-[#090C14] border border-[#1E2638] text-center">
             <div className="text-[11px] font-mono-tech uppercase text-slate-400">
-              Carte Bandite
+              Carte bandite
             </div>
             <div className="text-lg font-bold font-mono-tech text-rose-400">
               {formatDetail.banned_cards_count}
@@ -180,7 +180,7 @@ export const FormatExplorerView: React.FC<FormatExplorerViewProps> = ({
               <div className="flex items-center gap-2">
                 <Ban className="w-4 h-4 text-rose-400" />
                 <h2 className="font-bold text-sm text-rose-200">
-                  Banlist Ufficiale {formatDetail.name} ({filteredBans.length})
+                  Banlist ufficiale {formatDetail.name} ({filteredBans.length})
                 </h2>
               </div>
               <div className="relative w-48">

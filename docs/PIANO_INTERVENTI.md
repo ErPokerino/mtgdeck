@@ -479,10 +479,20 @@ Restano aperti:
   - Nessun overflow orizzontale.
 - **U2, pile visive.** La vista grafica per tipo o per curva c'era già; ora i comandi hanno `aria-pressed` e label.
 
-Restano aperti:
-- U5: revisione sistematica del glossario;
-- U8: trascinamento touch nel playtest;
-- un set di valutazione fisso da rigenerare a ogni cambio di prompt.
+- **U5, glossario.** `docs/GLOSSARIO.md` fissa la convenzione: interfaccia in italiano con maiuscole solo a inizio frase, termini di gioco in inglese, nomi delle sezioni invariati. Correzioni applicate in tutti i componenti:
+  - "main" al posto di Mainboard e mainboard;
+  - "valore di mana" o "MV" al posto di CMC;
+  - "tappa" e "stappa" al posto di TAP e STAP;
+  - "Magie" al posto di Spell; "Statistiche del mazzo" al posto di Telemetria; "Guida AI" al posto di AI Guide / Build; "mazzo di esempio" al posto di Sample; "Mythic" al posto di Mythic Rare;
+  - Title Case all'inglese portato a minuscolo da frase.
+- **U8, trascinamento touch nel playtest.** Si tiene premuta una carta per circa 350 ms e la si trascina:
+  - un'anteprima segue il dito e le zone di rilascio si evidenziano;
+  - le regole di rilascio sono le stesse del mouse;
+  - uno swipe immediato lascia scorrere la pagina, e il rilascio non gioca anche la carta.
+
+  Verificato con eventi touch simulati a 375 px.
+
+Resta aperto: un set di valutazione fisso da rigenerare a ogni cambio di prompt.
 
 ---
 

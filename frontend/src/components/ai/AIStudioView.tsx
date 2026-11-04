@@ -517,7 +517,7 @@ export function AIStudioView({
     <div className="grid md:grid-cols-2 gap-4 mt-4">
       {[
         ["cards_in", "IN · dalla sideboard", "text-emerald-300"],
-        ["cards_out", "OUT · dal mainboard", "text-rose-300"],
+        ["cards_out", "OUT · dal main", "text-rose-300"],
       ].map(([f, label, color]) => (
         <div className="panel" key={f}>
           <h4 className={`font-bold text-sm ${color}`}>

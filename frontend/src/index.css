@@ -156,3 +156,9 @@ summary:focus-visible,
 
 [data-tour-active="true"] { outline: 2px solid #f5d486; outline-offset: 5px; border-radius: 6px; scroll-margin: 140px; }
 @media (max-width: 600px) { .onboarding-coach { bottom: 8px; right: 8px; width: calc(100vw - 16px); max-height: 46vh; padding: 16px; } }
+
+/* Touch drag in the playtest: show where a card can be dropped. */
+[data-touch-drag="true"] [data-drop-zone] {
+  outline: 2px dashed rgba(200, 170, 110, 0.45);
+  outline-offset: 2px;
+}

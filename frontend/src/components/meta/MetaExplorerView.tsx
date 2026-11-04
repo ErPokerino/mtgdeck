@@ -360,7 +360,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
               }`}
             >
               <Grid className="w-3.5 h-3.5" />
-              <span>Matrice Matchup</span>
+              <span>Matrice dei matchup</span>
             </button>
             <button
               onClick={() => setSubTab("top_cards")}
@@ -371,7 +371,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
               }`}
             >
               <BarChart3 className="w-3.5 h-3.5" />
-              <span>Carte Più Giocate ({topCards.length})</span>
+              <span>Carte più giocate ({topCards.length})</span>
             </button>
           </div>
 
@@ -525,7 +525,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="text-[11px] font-semibold text-slate-400">
-                          Carte Chiave dell&apos;Archetipo:
+                          Carte chiave dell&apos;archetipo:
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {arch.key_cards.map((kc, idx) => (
@@ -581,7 +581,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                           type="button"
                           onClick={() => onOpenMatchupSpotWithArchetype(arch)}
                           className="py-2 px-3 rounded-lg bg-[#151D2E] hover:bg-[#1E2942] border border-[#2A3958] text-xs font-medium text-sky-300 flex items-center gap-1 cursor-pointer"
-                          title="Analizza Matchup contro questo archetipo con l'AI"
+                          title="Analizza il matchup contro questo archetipo con l'AI"
                         >
                           <TrendingUp className="w-3.5 h-3.5" />
                           <span>Analisi matchup AI</span>
@@ -781,14 +781,14 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold uppercase text-[#C8AA6E]">
-                        Lista Torneo (60 Main + 15 Side) • Clicca carta per Info
+                        Lista da torneo (60 main + 15 side) · clicca una carta per i dettagli
                       </span>
                       <button
                         type="button"
                         onClick={() => handleLoadSampleDeck(selectedArch)}
                         className="text-[11px] font-bold text-[#C8AA6E] hover:underline cursor-pointer"
                       >
-                        Carica nel Builder →
+                        Carica nel Deck Builder →
                       </button>
                     </div>
                     <div className="p-2.5 rounded-lg bg-[#080A10] border border-[#1B2336] font-mono-tech text-[11px] text-slate-200 max-h-[380px] overflow-y-auto space-y-0.5">
@@ -1009,7 +1009,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                 className="px-3 py-1.5 rounded-lg bg-[#090C12] hover:bg-[#161F33] border border-[#232E47] text-xs font-medium text-slate-300 flex items-center gap-1.5 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5 text-[#C8AA6E]" />
-                <span>Reset Filtri</span>
+                <span>Azzera filtri</span>
               </button>
             </div>
 
@@ -1034,7 +1034,7 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                   onChange={(e) => setSelectedType(e.target.value)}
                   className="w-full px-2.5 py-2 rounded-lg bg-[#080A10] border border-[#222C42] text-xs text-slate-200 cursor-pointer"
                 >
-                  <option value="all">Tutti i Tipi</option>
+                  <option value="all">Tutti i tipi</option>
                   <option value="Creature">Creature</option>
                   <option value="Instant">Instant</option>
                   <option value="Sorcery">Sorcery</option>
@@ -1054,8 +1054,8 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                   }
                   className="w-full px-2.5 py-2 rounded-lg bg-[#080A10] border border-[#222C42] text-xs text-slate-200 cursor-pointer"
                 >
-                  <option value="all">Mainboard + Sideboard</option>
-                  <option value="main">Giocate in Mainboard</option>
+                  <option value="all">Main + sideboard</option>
+                  <option value="main">Giocate nel main</option>
                   <option value="side">Giocate in Sideboard</option>
                 </select>
               </div>
@@ -1094,13 +1094,13 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                   className="w-full px-2.5 py-2 rounded-lg bg-[#080A10] border border-[#222C42] text-xs text-slate-200 cursor-pointer"
                 >
                   <option value="overall_desc">
-                    Ordina: % Presenza Totale
+                    Ordina: % presenza totale
                   </option>
-                  <option value="main_desc">Ordina: % Mainboard</option>
+                  <option value="main_desc">Ordina: % main</option>
                   <option value="side_desc">Ordina: % Sideboard</option>
                   <option value="copies_desc">Ordina: Copie Medie</option>
-                  <option value="cmc_asc">Ordina: Costo di Mana (CMC)</option>
-                  <option value="name_asc">Ordina: Nome (A-Z)</option>
+                  <option value="cmc_asc">Ordina: valore di mana</option>
+                  <option value="name_asc">Ordina: nome (A-Z)</option>
                 </select>
               </div>
             </div>
@@ -1166,15 +1166,15 @@ export const MetaExplorerView: React.FC<MetaExplorerViewProps> = ({
                   <th className="py-3 px-4">#</th>
                   <th className="py-3 px-4">Carta</th>
                   <th className="py-3 px-4">Costo / Tipo</th>
-                  <th className="py-3 px-4 text-right">% Presenza Totale</th>
+                  <th className="py-3 px-4 text-right">% presenza totale</th>
                   <th className="py-3 px-4 text-right">
-                    Mainboard (% / Copie)
+                    Main (% / copie)
                   </th>
                   <th className="py-3 px-4 text-right">
                     Sideboard (% / Copie)
                   </th>
                   <th className="py-3 px-4">
-                    Archetipi Principali che la usano
+                    Archetipi principali che la usano
                   </th>
                 </tr>
               </thead>

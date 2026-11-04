@@ -133,7 +133,7 @@ const RARITIES = [
   { id: "common", label: "Common" },
   { id: "uncommon", label: "Uncommon" },
   { id: "rare", label: "Rare" },
-  { id: "mythic", label: "Mythic Rare" },
+  { id: "mythic", label: "Mythic" },
 ];
 
 export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
@@ -754,11 +754,11 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
       return Object.entries(groups).filter(([, arr]) => arr.length > 0);
     } else {
       const groups: Record<string, DeckCardItem[]> = {
-        "CMC 0-1": [],
-        "CMC 2": [],
-        "CMC 3": [],
-        "CMC 4": [],
-        "CMC 5+": [],
+        "MV 0-1": [],
+        "MV 2": [],
+        "MV 3": [],
+        "MV 4": [],
+        "MV 5+": [],
         Terre: [],
       };
       main.forEach((item) => {
@@ -767,11 +767,11 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
           groups["Terre"].push(item);
         } else {
           const cmc = Math.floor(castableManaValue(item.card));
-          if (cmc <= 1) groups["CMC 0-1"].push(item);
-          else if (cmc === 2) groups["CMC 2"].push(item);
-          else if (cmc === 3) groups["CMC 3"].push(item);
-          else if (cmc === 4) groups["CMC 4"].push(item);
-          else groups["CMC 5+"].push(item);
+          if (cmc <= 1) groups["MV 0-1"].push(item);
+          else if (cmc === 2) groups["MV 2"].push(item);
+          else if (cmc === 3) groups["MV 3"].push(item);
+          else if (cmc === 4) groups["MV 4"].push(item);
+          else groups["MV 5+"].push(item);
         }
       });
       return Object.entries(groups).filter(([, arr]) => arr.length > 0);
@@ -885,7 +885,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                     type="button"
                     onClick={handleResetFilters}
                     className="p-1.5 rounded-lg bg-[#121724] hover:bg-[#1B2234] border border-[#222B40] text-slate-400 hover:text-white cursor-pointer"
-                    title="Resetta tutti i filtri"
+                    title="Azzera tutti i filtri"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                   </button>
@@ -940,7 +940,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                 {/* Mana Value (CMC) Quick Selector */}
                 <div className="flex items-center gap-0.5 bg-[#080A10] p-1 rounded-lg border border-[#1E2638]">
                   <span className="text-[11px] font-mono-tech text-slate-400 px-1.5">
-                    CMC:
+                    MV:
                   </span>
                   {[0, 1, 2, 3, 4, 5, 6].map((val) => {
                     const active = cmcExact === val;
@@ -974,7 +974,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   }}
                   className="px-2.5 py-1.5 rounded-lg bg-[#080A10] border border-[#1E2638] text-xs text-slate-200 focus:outline-none focus:border-[#C8AA6E] cursor-pointer"
                 >
-                  <option value="">Tutti i Tipi</option>
+                  <option value="">Tutti i tipi</option>
                   {CARD_TYPES.filter(Boolean).map((t) => (
                     <option key={t} value={t}>
                       {t}
@@ -1010,7 +1010,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   className="max-w-[165px] px-2.5 py-1.5 rounded-lg bg-[#080A10] border border-[#1E2638] text-xs text-slate-200 focus:outline-none focus:border-[#C8AA6E] truncate cursor-pointer"
                 >
                   <option value="">
-                    Tutti i Set ({formatId.toUpperCase()})
+                    Tutti i set ({formatId.toUpperCase()})
                   </option>
                   {(formatDetail?.legal_sets || []).map((s) => (
                     <option key={s.code} value={s.code}>
@@ -1030,11 +1030,11 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   className="px-2.5 py-1.5 rounded-lg bg-[#080A10] border border-[#C8AA6E]/40 text-xs font-semibold text-[#F3E5C8] focus:outline-none focus:border-[#C8AA6E] cursor-pointer"
                   title="Ordina risultati di ricerca"
                 >
-                  <option value="meta_desc">★ Più Giocate nel Meta (%)</option>
-                  <option value="cmc_asc">CMC Crescente</option>
-                  <option value="cmc_desc">CMC Decrescente</option>
-                  <option value="rarity_desc">Rarità (Mythic → Common)</option>
-                  <option value="released_desc">Più Recenti</option>
+                  <option value="meta_desc">★ Più giocate nel meta (%)</option>
+                  <option value="cmc_asc">Valore di mana crescente</option>
+                  <option value="cmc_desc">Valore di mana decrescente</option>
+                  <option value="rarity_desc">Rarità (da mythic a common)</option>
+                  <option value="released_desc">Più recenti</option>
                   <option value="name_asc">Nome (A-Z)</option>
                 </select>
               </div>
@@ -1100,7 +1100,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
 
                   <div>
                     <label className="block text-[11px] font-mono-tech text-slate-400 mb-0.5">
-                      CMC (Min - Max)
+                      Valore di mana (min - max)
                     </label>
                     <div className="flex items-center gap-1">
                       <input
@@ -1201,15 +1201,15 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                       className="w-full px-2 py-1 rounded bg-[#080A10] border border-[#222B40] text-xs text-white"
                     >
                       <option value="meta_desc">
-                        ★ Più Giocate nel Meta (%)
+                        ★ Più giocate nel meta (%)
                       </option>
-                      <option value="cmc_asc">CMC Crescente</option>
-                      <option value="cmc_desc">CMC Decrescente</option>
+                      <option value="cmc_asc">Valore di mana crescente</option>
+                      <option value="cmc_desc">Valore di mana decrescente</option>
                       <option value="rarity_desc">
-                        Rarità (Mythic → Common)
+                        Rarità (da mythic a common)
                       </option>
                       <option value="name_asc">Nome (A-Z)</option>
-                      <option value="released_desc">Più Recenti</option>
+                      <option value="released_desc">Più recenti</option>
                     </select>
                   </div>
                 </div>
@@ -1341,8 +1341,8 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                             <button
                               onClick={() => handleAddCard(card, "main", 1)}
                               className="flex-1 min-h-7 py-1.5 rounded bg-[#C8AA6E] hover:bg-[#DFC286] text-[#090B10] font-bold text-[11px] flex items-center justify-center gap-0.5 cursor-pointer shadow"
-                              title="Aggiungi 1 copia al Mainboard"
-                              aria-label={`Aggiungi ${card.name} al mainboard`}
+                              title="Aggiungi 1 copia al main"
+                              aria-label={`Aggiungi ${card.name} al main`}
                             >
                               <Plus className="w-3 h-3 stroke-[2.5]" /> Main
                             </button>
@@ -1357,7 +1357,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                             <button
                               onClick={() => setInspectedCard(card)}
                               className="p-1.5 min-h-7 rounded bg-[#141A29] hover:bg-[#1E273D] text-slate-200 border border-slate-600/40 cursor-pointer"
-                              title="Info Carta & Statistiche Meta"
+                              title="Scheda carta e statistiche meta"
                               aria-label={`Dettagli di ${card.name}`}
                             >
                               <Info className="w-3.5 h-3.5" />
@@ -1491,7 +1491,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                       className="px-2.5 py-1.5 rounded-lg bg-purple-950/60 hover:bg-purple-900/70 border border-purple-500/40 text-xs font-semibold text-purple-200 flex items-center gap-1 cursor-pointer"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-purple-300" />
-                      <span>AI Guide / Build</span>
+                      <span>Guida AI</span>
                     </button>
                   )}
 
@@ -1518,7 +1518,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                         : "text-slate-400"
                     }`}
                   >
-                    Per Tipo
+                    Per tipo
                   </button>
                   <button
                     type="button"
@@ -1530,7 +1530,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                         : "text-slate-400"
                     }`}
                   >
-                    Per Curva
+                    Per curva
                   </button>
                   <div className="w-px h-3.5 bg-[#1E2638] mx-0.5" />
                   <button
@@ -1620,7 +1620,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                       Side: {validation.sideboard_count}/15
                     </span>
                     <span className="text-slate-400">
-                      Avg CMC:{" "}
+                      MV medio:{" "}
                       <strong className="text-[#F3E5C8]">
                         {analytics.avg_cmc_nonland}
                       </strong>
@@ -1664,7 +1664,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                     onClick={() => setIsImportExportOpen(true)}
                     className="mt-1 px-3.5 py-1.5 rounded-lg bg-[#161E31] hover:bg-[#1F2A44] border border-[#C8AA6E]/40 text-xs font-semibold text-[#F3E5C8] cursor-pointer"
                   >
-                    Importa lista o carica Mazzo Esempio (
+                    Importa una lista o carica il mazzo di esempio (
                     {formatId.toUpperCase()})
                   </button>
                 </div>
@@ -1780,7 +1780,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                           " hover:bg-slate-700 text-slate-200"
                                         }
                                         title="Rimuovi 1 copia"
-                                        aria-label={`Rimuovi una copia di ${item.card_name} dal mainboard`}
+                                        aria-label={`Rimuovi una copia di ${item.card_name} dal main`}
                                       >
                                         <Minus className="w-3 h-3" />
                                       </button>
@@ -1793,7 +1793,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                           " hover:bg-[#C8AA6E] hover:text-black text-slate-200"
                                         }
                                         title="Aggiungi 1 copia"
-                                        aria-label={`Aggiungi una copia di ${item.card_name} al mainboard`}
+                                        aria-label={`Aggiungi una copia di ${item.card_name} al main`}
                                       >
                                         <Plus className="w-3 h-3" />
                                       </button>
@@ -1820,7 +1820,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                           " hover:bg-rose-800 text-rose-300"
                                         }
                                         title="Elimina dal mazzo"
-                                        aria-label={`Elimina ${item.card_name} dal mainboard`}
+                                        aria-label={`Elimina ${item.card_name} dal main`}
                                       >
                                         <Trash2 className="w-3 h-3" />
                                       </button>
@@ -1911,8 +1911,8 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                     ROW_BUTTON +
                                     " hover:bg-amber-700 text-amber-300"
                                   }
-                                  title="Sposta in Mainboard"
-                                  aria-label={`Sposta ${item.card_name} nel mainboard`}
+                                  title="Sposta nel main"
+                                  aria-label={`Sposta ${item.card_name} nel main`}
                                 >
                                   <ArrowLeftRight className="w-3 h-3" />
                                 </button>
@@ -1958,11 +1958,11 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#F3E5C8]">
                     <BarChart2 className="w-4 h-4 text-[#C8AA6E]" />
                     <span>
-                      Telemetria Mazzo: Curva di Mana & Bilanciamento Colori
+                      Statistiche del mazzo: curva e mana
                     </span>
                   </div>
                   <span className="font-mono-tech text-[11px] text-slate-400">
-                    Spell:{" "}
+                    Magie:{" "}
                     <strong className="text-white">
                       {analytics.nonland_count}
                     </strong>{" "}
@@ -1977,7 +1977,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   {/* Mana Curve Bar Chart (7 cols) */}
                   <div className="md:col-span-7 bg-[#090C12] border border-[#192030] rounded-lg p-3">
                     <div className="flex items-center justify-between text-[11px] text-slate-400 mb-2">
-                      <span>Curva di Mana (Escluse Terre)</span>
+                      <span>Curva di mana (terre escluse)</span>
                       <div className="flex items-center gap-3 text-[11px]">
                         <span className="flex items-center gap-1">
                           <span className="w-2 h-2 rounded-xs bg-[#C8AA6E]" />{" "}
@@ -1985,7 +1985,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                         </span>
                         <span className="flex items-center gap-1">
                           <span className="w-2 h-2 rounded-xs bg-sky-500" />{" "}
-                          Altre Magie
+                          Altre magie
                         </span>
                       </div>
                     </div>
@@ -2025,14 +2025,14 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                                 <div
                                   style={{ height: `${spellH}%` }}
                                   className="w-full bg-sky-500/85 transition-all"
-                                  title={`Magie CMC ${bucket}: ${data.spells}`}
+                                  title={`Magie con MV ${bucket}: ${data.spells}`}
                                 />
                               )}
                               {data.creatures > 0 && (
                                 <div
                                   style={{ height: `${creatH}%` }}
                                   className="w-full bg-[#C8AA6E] transition-all"
-                                  title={`Creature CMC ${bucket}: ${data.creatures}`}
+                                  title={`Creature con MV ${bucket}: ${data.creatures}`}
                                 />
                               )}
                             </div>

@@ -27,7 +27,8 @@ Al primo avvio vengono creati database e catalogo. La sincronizzazione iniziale 
 - **Statistiche del builder**: fonti per colore rispetto ai requisiti di Karsten, terre tappate, probabilità di terre e interazione in main e sideboard, ricalcolate a ogni modifica. Eliminare una carta mostra "Annulla".
 - **Ricerca carte**: "/" porta il focus sulla ricerca. C'è un filtro per funzione (rimozione, counter, pescata, hate al cimitero…, dai tag Scryfall) e i filtri attivi compaiono come chip rimovibili.
 - **Generazione e Analisi matchup** girano sul server come lavori persistenti: AI Studio mostra la fase reale, permette di annullare e ritrova il lavoro dopo un reload. Dal Metagame, "Costruisci da questo archetipo" apre la generazione con quel punto di partenza.
-- **Playtest**: D pesca, T nuovo turno, U stappa, M mulligan, Z annulla.
+- **Playtest**: D pesca, T nuovo turno, U stappa, M mulligan, Z annulla. Su touch tieni premuta una carta per trascinarla in un'altra zona.
+- **Testi dell'interfaccia**: le convenzioni di lingua sono in `docs/GLOSSARIO.md`.
 - **Mazzi e guide → Qualità**: metriche automatiche per formato, senza AI.
   - Mazzi generati confrontati con le liste di consenso: sovrapposizione, deficit di fonti, interazione, differenze non motivate.
   - Guide: matchup coperti, parole e carte avversarie per matchup, errori dei validatori, avvisi aperti.

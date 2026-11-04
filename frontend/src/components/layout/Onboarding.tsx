@@ -46,7 +46,7 @@ const steps: {
     tab: "playtest",
     target: "playtest",
     title: "Prova le decisioni sul campo",
-    text: "Scegli un mazzo e una mano iniziale. Clicca l’immagine in mano per giocarla, sul campo per TAP/STAP. I tre puntini aprono informazioni e azioni.",
+    text: "Scegli un mazzo e una mano iniziale. Clicca l’immagine in mano per giocarla, sul campo per tapparla o stapparla. I tre puntini aprono informazioni e azioni.",
     tryThis:
       "Prova a spostare una carta tra le zone. Nel menu trovi facce delle carte doppie, pedine e segnalini. Annulla recupera un’azione; il test non modifica il mazzo salvato.",
   },

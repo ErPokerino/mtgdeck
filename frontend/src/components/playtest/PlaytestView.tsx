@@ -154,7 +154,7 @@ export function PlaytestView({
           c.uid === uid ? { ...c, tapped: !c.tapped } : c,
         ),
       }),
-      "TAP / STAP",
+      "Tappa / stappa",
     );
   const draw = () => {
     const top = game.cards.find((c) => c.zone === "library");
@@ -175,7 +175,7 @@ export function PlaytestView({
           return battlefield(c.zone) ? { ...c, tapped: false } : c;
         }),
       };
-    }, "Nuovo turno: STAP e pesca");
+    }, "Nuovo turno: stappa e pesca");
   const untapAll = () =>
     commit(
       (g) => ({
@@ -184,7 +184,7 @@ export function PlaytestView({
           battlefield(c.zone) ? { ...c, tapped: false } : c,
         ),
       }),
-      "STAP globale",
+      "Stappa tutto",
     );
   const undo = () => {
     if (!past.length) return;
@@ -300,11 +300,14 @@ export function PlaytestView({
   };
   const dropped = (event: React.DragEvent, zone: Zone) => {
     event.preventDefault();
-    if (openingBlocked) return;
-    const uid =
+    dropTo(
       event.dataTransfer.getData("text/mtg-uid") ||
-      event.dataTransfer.getData("text/plain");
-    if (!uid) return;
+        event.dataTransfer.getData("text/plain"),
+      zone,
+    );
+  };
+  const dropTo = (uid: string, zone: Zone) => {
+    if (openingBlocked || !uid) return;
     const card = game.cards.find((c) => c.uid === uid);
     if (card?.zone === "hand" && battlefield(zone)) {
       // Playing from hand follows the same routing as clicking: lands to the
@@ -314,6 +317,85 @@ export function PlaytestView({
       move(uid, zone);
     }
   };
+  const [touchDrag, setTouchDrag] = useState<{
+    uid: string;
+    name: string;
+    img: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const touch = useRef<{
+    uid: string;
+    startX: number;
+    startY: number;
+    active: boolean;
+    timer: number;
+  } | null>(null);
+  const dropRef = useRef(dropTo);
+  dropRef.current = dropTo;
+  const startTouchDrag = (
+    e: React.TouchEvent,
+    inst: Instance,
+    name: string,
+    img: string,
+  ) => {
+    if (openingBlocked || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const state = {
+      uid: inst.uid,
+      startX: t.clientX,
+      startY: t.clientY,
+      active: false,
+      timer: 0,
+    };
+    state.timer = window.setTimeout(() => {
+      state.active = true;
+      setTouchDrag({ uid: inst.uid, name, img, x: state.startX, y: state.startY });
+      navigator.vibrate?.(15);
+    }, 350);
+    touch.current = state;
+  };
+  useEffect(() => {
+    const end = () => {
+      if (touch.current) clearTimeout(touch.current.timer);
+      touch.current = null;
+      setTouchDrag(null);
+    };
+    const onMove = (e: TouchEvent) => {
+      const state = touch.current;
+      if (!state) return;
+      const t = e.touches[0];
+      if (!state.active) {
+        // Moving before the long press means scrolling: give the gesture back.
+        if (Math.hypot(t.clientX - state.startX, t.clientY - state.startY) > 10) end();
+        return;
+      }
+      e.preventDefault();
+      setTouchDrag((d) => d && { ...d, x: t.clientX, y: t.clientY });
+    };
+    const onEnd = (e: TouchEvent) => {
+      const state = touch.current;
+      if (!state) return;
+      if (state.active) {
+        e.preventDefault(); // no click after a drag
+        const t = e.changedTouches[0];
+        const target = document
+          .elementFromPoint(t.clientX, t.clientY)
+          ?.closest<HTMLElement>("[data-drop-zone]");
+        if (target?.dataset.dropZone)
+          dropRef.current(state.uid, target.dataset.dropZone as Zone);
+      }
+      end();
+    };
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onEnd, { passive: false });
+    document.addEventListener("touchcancel", end);
+    return () => {
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", onEnd);
+      document.removeEventListener("touchcancel", end);
+    };
+  }, []);
   const cardTile = (inst: Instance) => {
     const face = faceCard(inst.card, inst.face),
       img = imageOf(face),
@@ -327,6 +409,8 @@ export function PlaytestView({
         className={`shrink-0 rounded-xl border p-1.5 bg-[#101a28] ${marked ? "border-amber-300 ring-2 ring-amber-400" : selected === inst.uid ? "border-sky-300" : "border-slate-700"}`}
         style={{ width: zoom + 12 }}
         draggable={!openingBlocked}
+        onTouchStart={(e) => startTouchDrag(e, inst, face.name, img)}
+        onContextMenu={(e) => touch.current && e.preventDefault()}
         onDragStart={(e) => {
           e.dataTransfer.setData("text/mtg-uid", inst.uid);
           e.dataTransfer.setData("text/plain", inst.uid);
@@ -430,6 +514,7 @@ export function PlaytestView({
         className="rounded-xl border border-slate-700 bg-[#0c1420] p-3 md:p-4"
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => dropped(e, id)}
+        data-drop-zone={id}
         aria-label={zones[id]}
       >
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -456,6 +541,7 @@ export function PlaytestView({
                   : ""
               }
               onDragOver={(e) => e.preventDefault()}
+              data-drop-zone={lane.id}
               onDrop={(e) => {
                 e.stopPropagation();
                 dropped(e, lane.id);
@@ -493,7 +579,28 @@ export function PlaytestView({
   };
   const chosenFace = chosen ? faceCard(chosen.card, chosen.face) : null;
   return (
-    <div className="max-w-[1900px] mx-auto p-3 md:px-5 md:py-3 space-y-3">
+    <div
+      className="max-w-[1900px] mx-auto p-3 md:px-5 md:py-3 space-y-3"
+      data-touch-drag={touchDrag ? "true" : undefined}
+    >
+      {touchDrag && (
+        <>
+          <div
+            aria-hidden="true"
+            className="fixed z-50 pointer-events-none w-20 rounded-lg shadow-2xl ring-2 ring-[#C8AA6E] overflow-hidden opacity-90"
+            style={{ left: touchDrag.x - 40, top: touchDrag.y - 112 }}
+          >
+            {touchDrag.img ? (
+              <img src={touchDrag.img} alt="" className="w-full" />
+            ) : (
+              <span className="block bg-[#172435] p-2 text-xs">{touchDrag.name}</span>
+            )}
+          </div>
+          <p role="status" className="sr-only">
+            Trascini {touchDrag.name}: rilascia su una zona.
+          </p>
+        </>
+      )}
       <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
           <h1 className="text-lg font-bold flex gap-2 items-center">
@@ -609,7 +716,7 @@ export function PlaytestView({
               aria-keyshortcuts="T"
               title="Scorciatoia: T"
             >
-              Turno {game.turn + 1} · STAP + pesca
+              Turno {game.turn + 1} · stappa e pesca
             </button>
             <button
               className="btn-secondary"
@@ -618,7 +725,7 @@ export function PlaytestView({
               aria-keyshortcuts="U"
               title="Scorciatoia: U"
             >
-              STAP tutto
+              Stappa tutto
             </button>
             <button
               className="btn-secondary"
@@ -700,7 +807,7 @@ export function PlaytestView({
             <div className="space-y-4 min-w-0">
               {zone(
                 "permanents",
-                "Clicca una carta per TAP/STAP; usa ••• per le azioni",
+                "Clicca una carta per tapparla o stapparla; usa ••• per le azioni",
               )}
               {zone(
                 "hand",
@@ -724,6 +831,7 @@ export function PlaytestView({
                       }}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => dropped(e, z)}
+                      data-drop-zone={z}
                     >
                       {zones[z]} ({counts[z]})
                     </button>
@@ -1161,7 +1269,7 @@ export function PlaytestView({
               {[false, true].map((side) => (
                 <div key={String(side)}>
                   <h3 className="mb-3">
-                    {side ? "Sideboard" : "Mainboard"} (
+                    {side ? "Sideboard" : "Main"} (
                     {
                       sideDraft.filter(
                         (c) => !c.isToken && (c.zone === "sideboard") === side,

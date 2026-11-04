@@ -14,7 +14,7 @@ interface ImportExportModalProps {
 
 const SAMPLE_LISTS: Record<FormatId, { name: string; list: string }> = {
   standard: {
-    name: "Dimir Midrange (Standard Sample)",
+    name: "Dimir Midrange (esempio Standard)",
     list: `Deck
 4 Deep-Cavern Bat (LCI) 102
 4 Spyglass Siren (LCI) 78
@@ -45,7 +45,7 @@ Sideboard
 1 Tishana's Tidebinder (LCI) 81`,
   },
   pioneer: {
-    name: "Rakdos Midrange (Pioneer Sample)",
+    name: "Rakdos Midrange (esempio Pioneer)",
     list: `Deck
 4 Bloodtithe Harvester (VOW) 232
 4 Fable of the Mirror-Breaker (NEO) 141
@@ -78,7 +78,7 @@ Sideboard
 2 Go Blank (STX) 72`,
   },
   modern: {
-    name: "Boros Energy (Modern Sample)",
+    name: "Boros Energy (esempio Modern)",
     list: `Deck
 4 Guide of Souls (MH3) 29
 4 Ocelot Pride (MH3) 38
@@ -238,7 +238,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                   onClick={handleLoadSample}
                   className="px-3 py-2 rounded-lg bg-[#151D2E] hover:bg-[#1D2840] border border-[#2B3A5A] text-xs font-medium text-[#F3E5C8] cursor-pointer shrink-0"
                 >
-                  Carica Mazzo Esempio ({formatId.toUpperCase()})
+                  Carica il mazzo di esempio ({formatId.toUpperCase()})
                 </button>
               </div>
 
@@ -271,7 +271,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                 >
                   {importing
                     ? "Verifica carte su Scryfall..."
-                    : "Importa e Valida Mazzo"}
+                    : "Importa e valida il mazzo"}
                 </button>
               </div>
             </form>
@@ -314,7 +314,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                     <Copy className="w-3.5 h-3.5" />
                   )}
                   <span>
-                    {copied ? "Copiato negli appunti!" : "Copia Lista"}
+                    {copied ? "Copiato negli appunti!" : "Copia la lista"}
                   </span>
                 </button>
               </div>
