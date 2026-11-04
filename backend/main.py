@@ -17,6 +17,7 @@ from app.routers import (
     decks,
     formats,
     meta,
+    quality as quality_router,
     settings as settings_router,
     sync,
 )
@@ -157,6 +158,7 @@ app.include_router(ai.router)
 app.include_router(guides.router)
 app.include_router(sync.router)
 app.include_router(settings_router.router)
+app.include_router(quality_router.router)
 
 
 @app.get("/api/health")

@@ -441,3 +441,36 @@ class GuideVersion(Base):
     deck_snapshot = Column(JSON, nullable=False)
     guide_json = Column(JSON, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
+class QualityRating(Base):
+    """Human evaluation of a guide or generated deck (1-5 per criterion)."""
+
+    __tablename__ = "quality_ratings"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    target_kind = Column(String(16), nullable=False, index=True)  # guide | deck
+    target_id = Column(Integer, nullable=False, index=True)
+    depth = Column(Integer, nullable=False)
+    correctness = Column(Integer, nullable=False)
+    usefulness = Column(Integer, nullable=False)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
+class MatchRecord(Base):
+    """A real match the user played with a deck: the empirical side of every estimate."""
+
+    __tablename__ = "match_records"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    deck_id = Column(
+        Integer, ForeignKey("decks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    format_id = Column(String(32), nullable=False, index=True)
+    opponent_archetype = Column(String(128), nullable=False)
+    games_won = Column(Integer, nullable=False, default=0)
+    games_lost = Column(Integer, nullable=False, default=0)
+    on_the_play = Column(Boolean, nullable=True)
+    played_on = Column(String(10), nullable=True)  # yyyy-mm-dd
+    event = Column(String(128), nullable=True)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)

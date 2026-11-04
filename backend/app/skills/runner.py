@@ -270,6 +270,9 @@ def _run_deck_guide_skill(
 
     latest_snap = deck_engine.latest_snapshot(db, fmt)
     ctx = _guide_context(db, latest_snap, entries)
+    from app.services.quality import records_text
+
+    records = records_text(db, deck_obj.id if deck_obj else None)
     archs = ctx["archetypes"]
     oracle_block = _format_entries_with_oracle(entries)
     user_prompt = (
@@ -284,6 +287,9 @@ GUIDA COMPETITIVA E SIDEBOARD GUIDE PER QUESTA LISTA:
 
 === RULING UFFICIALI DELLE NOSTRE CARTE (Scryfall) ===
 {ctx["rulings"] or "nessuno"}
+
+=== RISULTATI REALI DEL GIOCATORE CON QUESTA LISTA ===
+{records or "nessuno registrato"}
 
 === ANALISI DELLA LISTA (calcolata dall'app: citala, non ricalcolarla) ===
 {ctx["analysis"]}

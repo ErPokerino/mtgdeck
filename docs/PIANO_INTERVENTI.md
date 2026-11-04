@@ -436,6 +436,38 @@ Senza misure non si può dire se un cambio di prompt o di modello migliora i ris
 - **M5. Registro.** Per ogni esecuzione: versione del prompt, modello, costo, esito ed errori (in parte esiste già in `ai_runs`). Mostrare il trend in Impostazioni.
 - **M6. Ciclo con i risultati reali.** I record dell'utente (G-6) alimentano la revisione delle stime e la scelta dei flex slot.
 
+### Stato Fase 5 (2026-11-04)
+
+- **M1, set di riferimento.** Le liste di consenso dei primi 5 archetipi del formato, già calcolate in Fase 2, sono il metro di paragone dei mazzi generati.
+- **M2, mazzi** (`backend/app/services/quality.py`):
+  - sovrapposizione con il consenso più vicino;
+  - terre e deficit di fonti rispetto ai requisiti;
+  - terre sempre tappate e interazione nel main;
+  - differenze dal consenso non motivate, avvisi aperti, esito del critico e della revisione.
+- **M3, guide:**
+  - matchup coperti rispetto al campo attuale;
+  - parole per matchup principale e carte avversarie per matchup;
+  - matchup con play/draw distinti;
+  - errori dei validatori ricalcolati sulla versione salvata, avvisi aperti ed esito della revisione.
+- **M4, valutazione umana.** Voto da 1 a 5 su profondità, correttezza e utilità in gara, in fondo a ogni guida (`quality_ratings`), con la media nel report.
+- **M5, registro.** Per skill, versione del prompt e modello: esecuzioni, fallite, con avvisi, durata e tentativi medi, più lo stato dei lavori in background. Il costo non è registrato: il provider non viene interrogato sull'uso dei token.
+- **M6 e la parte di G-6 rimasta aperta.** Nuova tabella `match_records` con il pulsante "Risultati" su ogni mazzo attivo: avversario, game vinti e persi, play/draw del Game 1, data ed evento. Il riepilogo per archetipo entra nel contesto della guida successiva, che deve confrontarlo con le stime e ricordare il peso del campione. I risultati si cancellano con il mazzo.
+- **Interfaccia.** Scheda "Qualità" in Mazzi e guide. Lo script `backend/quality_report.py <formato> [--json]` serve a confrontare due momenti, per esempio prima e dopo un cambio di prompt.
+
+**Test.** 5 test in `backend/tests/test_phase5_quality.py`, 108 in tutto.
+
+**Prima lettura del report** (Pioneer, copia del database):
+- **Guide v7 con Argon:** 315-351 parole per matchup principale, 2,1-2,9 carte avversarie per matchup, 8 matchup su 8, nessun errore dei validatori.
+- **Guide precedenti:** 75-133 parole, 0 carte avversarie, 1 matchup su 8 rispetto al campo attuale.
+- **Fallimenti:** prompt v5 3 su 3, v6 4 su 8, v7 0 su 2.
+- **Mazzi:** The Rock generato dal consenso ha il 98,3% di sovrapposizione e 0 differenze non motivate. I brew Rakdos sono al 43-53%, come ci si aspetta da liste fuori consenso.
+- **Play/draw:** 0 matchup distinti anche nelle guide v7 (punto già aperto in Fase 3).
+
+Restano aperti:
+- costo per esecuzione (token del provider);
+- trend grafico nel tempo, oggi solo per versione;
+- un set di valutazione fisso da rigenerare a ogni cambio di prompt: oggi si misura ciò che è stato prodotto.
+
 ---
 
 ## 8. Sequenza consigliata

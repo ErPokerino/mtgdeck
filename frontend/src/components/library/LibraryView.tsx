@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import {
   Archive,
+  BarChart2,
   BookOpen,
   Copy,
   FolderOpen,
   History,
   Search,
+  Swords,
   Trash2,
   Download,
   X,
@@ -14,6 +16,8 @@ import { api } from "../../api/client";
 import type { DeckDetail, DeckSummary, FormatId } from "../../types";
 import { GuideReader } from "./GuideReader";
 import { useDialog } from "../../hooks/useDialog";
+import { QualityReport } from "./QualityReport";
+import { RecordsDialog } from "./RecordsDialog";
 
 export function LibraryView({
   formatId,
@@ -30,7 +34,10 @@ export function LibraryView({
   onDelete: (id: number) => void;
   onRestored: (d: DeckDetail) => void;
 }) {
-  const [tab, setTab] = useState<"active" | "archived" | "guides">("active");
+  const [tab, setTab] = useState<"active" | "archived" | "guides" | "quality">(
+    "active",
+  );
+  const [recordsDeck, setRecordsDeck] = useState<{ id: number; name: string } | null>(null);
   const [decks, setDecks] = useState<DeckSummary[]>([]),
     [guides, setGuides] = useState<any[]>([]);
   const [query, setQuery] = useState(""),
@@ -110,7 +117,7 @@ export function LibraryView({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          {(["active", "archived", "guides"] as const).map((t) => (
+          {(["active", "archived", "guides", "quality"] as const).map((t) => (
             <button
               key={t}
               aria-pressed={tab === t}
@@ -121,14 +128,18 @@ export function LibraryView({
                 <FolderOpen size={16} />
               ) : t === "archived" ? (
                 <Archive size={16} />
-              ) : (
+              ) : t === "guides" ? (
                 <BookOpen size={16} />
+              ) : (
+                <BarChart2 size={16} />
               )}{" "}
               {t === "active"
                 ? "Mazzi attivi"
                 : t === "archived"
                   ? "Archiviati"
-                  : "Guide salvate"}
+                  : t === "guides"
+                    ? "Guide salvate"
+                    : "Qualità"}
             </button>
           ))}
         </div>
@@ -147,7 +158,9 @@ export function LibraryView({
           {error}
         </p>
       )}
-      {loading ? (
+      {tab === "quality" ? (
+        <QualityReport formatId={formatId} />
+      ) : loading ? (
         <p role="status" className="panel">
           Caricamento archivio…
         </p>
@@ -295,6 +308,15 @@ export function LibraryView({
                     <History size={14} />
                     Versioni
                   </button>
+                  {tab === "active" && (
+                    <button
+                      className="btn-secondary"
+                      onClick={() => setRecordsDeck({ id: d.id, name: d.name })}
+                    >
+                      <Swords size={14} />
+                      Risultati
+                    </button>
+                  )}
                   <button
                     className="btn-secondary"
                     disabled={busy}
@@ -320,7 +342,7 @@ export function LibraryView({
             ))}
         </div>
       )}
-      {!loading && !(tab === "guides" ? guides : decks).length && (
+      {tab !== "quality" && !loading && !(tab === "guides" ? guides : decks).length && (
         <div className="panel py-12 text-center">
           <h2 className="text-xl font-bold">
             {tab === "guides"
@@ -335,6 +357,13 @@ export function LibraryView({
               : "Crea o importa una lista nel Deck Builder, oppure genera un mazzo con AI Studio."}
           </p>
         </div>
+      )}
+      {recordsDeck && (
+        <RecordsDialog
+          deck={recordsDeck}
+          formatId={formatId}
+          onClose={() => setRecordsDeck(null)}
+        />
       )}
       {guide && (
         <div className="fixed inset-0 z-50 bg-black/80 overflow-y-auto p-3 md:p-8">

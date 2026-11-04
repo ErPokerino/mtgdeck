@@ -242,6 +242,32 @@ export const api = {
   cancelAIJob: (id: number) =>
     apiFetch<AIJob>(`/api/ai/jobs/${id}/cancel`, { method: "POST" }),
 
+  getQualityReport: (formatId: FormatId) =>
+    apiFetch<any>(`/api/quality/report?format_id=${formatId}`),
+  getRating: (kind: "guide" | "deck", id: number) =>
+    apiFetch<any>(`/api/quality/ratings?target_kind=${kind}&target_id=${id}`),
+  addRating: (payload: {
+    target_kind: "guide" | "deck";
+    target_id: number;
+    depth: number;
+    correctness: number;
+    usefulness: number;
+    note?: string;
+  }) =>
+    apiFetch<any>("/api/quality/ratings", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listRecords: (deckId: number) =>
+    apiFetch<any>(`/api/quality/decks/${deckId}/records`),
+  addRecord: (deckId: number, payload: Record<string, unknown>) =>
+    apiFetch<any>(`/api/quality/decks/${deckId}/records`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteRecord: (recordId: number) =>
+    apiFetch<any>(`/api/quality/records/${recordId}`, { method: "DELETE" }),
+
   getSyncStatus: () => apiFetch<SyncStatus>("/api/sync/status"),
 
   triggerScryfallSync: (forceDownload = false) =>

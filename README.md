@@ -28,6 +28,12 @@ Al primo avvio vengono creati database e catalogo. La sincronizzazione iniziale 
 - **Ricerca carte**: "/" porta il focus sulla ricerca. C'è un filtro per funzione (rimozione, counter, pescata, hate al cimitero…, dai tag Scryfall) e i filtri attivi compaiono come chip rimovibili.
 - **Generazione e Analisi matchup** girano sul server come lavori persistenti: AI Studio mostra la fase reale, permette di annullare e ritrova il lavoro dopo un reload. Dal Metagame, "Costruisci da questo archetipo" apre la generazione con quel punto di partenza.
 - **Playtest**: D pesca, T nuovo turno, U stappa, M mulligan, Z annulla.
+- **Mazzi e guide → Qualità**: metriche automatiche per formato, senza AI.
+  - Mazzi generati confrontati con le liste di consenso: sovrapposizione, deficit di fonti, interazione, differenze non motivate.
+  - Guide: matchup coperti, parole e carte avversarie per matchup, errori dei validatori, avvisi aperti.
+  - Esecuzioni per versione del prompt e modello, con le tue valutazioni da 1 a 5 (in fondo a ogni guida).
+  - Da riga di comando: `python quality_report.py pioneer [--json]` dalla cartella `backend`.
+- **Risultati reali**: il pulsante "Risultati" su un mazzo registra i tuoi match per archetipo avversario. La guida successiva li confronta con le stime.
 - **Mazzi e guide → Mazzi attivi**: cerca, apri, duplica, avvia il playtest, consulta le versioni o archivia una lista. Archiviare la toglie dai selettori, mantenendo dati e storico.
 - **Archiviati**: ripristina una lista oppure eliminala definitivamente dopo conferma.
 - **Guide salvate**: ogni generazione conserva una versione indipendente con la lista analizzata, modello, data e contesto. Anche le liste incollate hanno una guida archiviata. Puoi leggere ed esportare ogni versione in PDF con indice navigabile, lista, piani e tabelle di sidata.

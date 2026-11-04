@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Download, ChevronDown } from "lucide-react";
+import { RatingForm } from "./RatingForm";
 
 export function GuideReader({
   guide,
@@ -510,6 +511,7 @@ export function GuideReader({
           );
         })}
       </section>
+      {guideId && <RatingForm kind="guide" id={guideId} />}
     </article>
   );
 }

@@ -23,10 +23,11 @@ export function useDialog<T extends HTMLElement = HTMLDivElement>(
       Array.from(ref.current?.querySelectorAll<HTMLElement>(FOCUSABLE) || []).filter(
         (el) => el.offsetParent !== null,
       );
-    const frame = requestAnimationFrame(() => {
+    // A timeout (not requestAnimationFrame) also runs in background tabs.
+    const frame = setTimeout(() => {
       const node = ref.current;
       if (node && !node.contains(document.activeElement)) (items()[0] || node).focus();
-    });
+    }, 0);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -48,7 +49,7 @@ export function useDialog<T extends HTMLElement = HTMLDivElement>(
     };
     document.addEventListener("keydown", onKey);
     return () => {
-      cancelAnimationFrame(frame);
+      clearTimeout(frame);
       document.removeEventListener("keydown", onKey);
       opener?.focus?.();
     };
