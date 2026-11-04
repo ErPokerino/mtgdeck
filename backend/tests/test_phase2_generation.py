@@ -343,3 +343,99 @@ def test_x_spells_are_judged_with_x_at_least_one(db, cards):
     analysis = deck_engine.analyze_list(db, [(agadeem, "main", 1), (swamp, "main", 59)])
     black = next(c for c in analysis["colors"] if c["color"] == "B")
     assert black["driver_turn"] == 4 and black["required"] == 20
+
+
+# ---------------------------------------------------------------------------
+# Requested plan: references by role and structure check
+# ---------------------------------------------------------------------------
+
+
+def add_archetype(db, snap_id, name, category, colors, share, main):
+    row = TournamentDecklist(
+        source="mtgtop8", source_deck_id=name, format_id="modern", archetype_name=name,
+        cards=deck_cards(main, SIDE), is_complete=True,
+    )
+    db.add(row)
+    db.flush()
+    arch = MetaArchetype(
+        snapshot_id=snap_id, format_id="modern", name=name, slug=name.lower(), category=category,
+        tier=2, colors=colors, color_name=name, meta_share_pct=share, winrate_pct=None,
+        decklist_ids=[row.id], decklists_count=1,
+    )
+    db.add(arch)
+    db.commit()
+    return arch
+
+
+def test_control_brew_gets_a_reference_by_plan_not_only_by_colours(db, meta):
+    add_archetype(db, meta.snapshot_id, "Red Control", "control", ["R"], 3.0, {"Bolt": 4, "Blaze": 4, "Mountain": 52})
+    ctx = deck_generation.build_context(
+        db, AIDeckGenerationRequest(format_id="modern", archetype="control", colors=["R"])
+    )
+    roles = {r.archetype.name: ctx.reference_roles[r.archetype.id] for r in ctx.references}
+    # Colours alone would pick only Mono Red, an aggro list.
+    assert roles == {"Mono Red": "per colori (piano aggro)", "Red Control": "per piano (control)"}
+    assert "[riferimento per piano (control)]" in ctx.text
+    assert "=== STRUTTURA DEGLI ARCHETIPI DEL CAMPO" in ctx.text
+    assert "→ Red Control (control, 3%)" in ctx.text
+
+
+def test_structure_profile_counts_threats_and_interaction(db, cards):
+    cards["Long Text"].cmc, cards["Bolt"].cmc = 2.0, 1.0
+    entries = [(cards["Long Text"], "main", 8), (cards["Bolt"], "main", 4), (cards["Mountain"], "main", 48)]
+    s = deck_engine.structure_profile(db, entries)
+    assert s["creatures"] == 8 and s["interaction"] == 4 and s["lands"] == 48
+    assert s["avg_mv"] == pytest.approx((8 * 2 + 4) / 12, abs=0.01)
+
+
+def arch_struct(name, category, creatures, interaction, counters=0):
+    values = dict(creatures=creatures, avg_mv=2.0, interaction=interaction, card_advantage=8,
+                  sweepers=0, counters=counters, lands=24)
+    return deck_engine.ArchetypeStructure(name, category, 5.0, values)
+
+
+def test_role_issue_when_a_control_list_is_built_like_aggro():
+    field = [
+        arch_struct("Draw-Go", "control", 1, 28, counters=8),
+        arch_struct("Attrition", "control", 10, 24),
+        arch_struct("Burn", "aggro", 20, 10),
+        arch_struct("Stompy", "aggro", 26, 4),
+    ]
+    aggro_like = dict(field[2].structure, creatures=21)
+    near = deck_engine.nearest_structures(aggro_like, field)
+    assert near[0][0].name == "Burn"
+    issues = deck_engine.role_issues("control", near, field)
+    assert len(issues) == 1 and "più vicina a Burn (aggro)" in issues[0]
+    # An attrition list is a control list in this field; midrange is never checked.
+    attrition = dict(field[1].structure, creatures=11)
+    assert deck_engine.role_issues("control", deck_engine.nearest_structures(attrition, field), field) == []
+    assert deck_engine.role_issues("midrange", near, field) == []
+
+
+def test_mulligan_odds_follow_the_london_rule(db, cards):
+    entries = [(cards["Mountain"], "main", 24), (cards["Bolt"], "main", 36)]
+    odds = deck_engine.analyze_list(db, entries)["odds"]
+    p7 = odds["p_2_to_5_lands_in_7"]
+    assert odds["p_2_to_5_lands_within_one_mulligan"] == pytest.approx(1 - (1 - p7) ** 2, abs=1e-3)
+    assert p7 == pytest.approx(0.8436, abs=1e-3)
+
+
+def test_consensus_lists_replace_hand_written_samples_and_import_back(db, meta):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.database import get_db
+    from app.routers import meta as meta_router
+    from app.services.deck_validator import parse_decklist_text
+
+    app = FastAPI()
+    app.include_router(meta_router.router)
+    app.dependency_overrides[get_db] = lambda: db
+    lists = TestClient(app).get("/api/meta/modern/consensus-lists").json()
+    # Green Stompy has no complete lists: only Mono Red is offered.
+    assert [x["name"] for x in lists] == ["Mono Red"] and lists[0]["lists_count"] == 3
+    resolved, unresolved = parse_decklist_text(db, lists[0]["text"])
+    assert not unresolved
+    main = {c.name: q for c, b, q in resolved if b == "main"}
+    assert main == {"Bolt": 4, "Shock": 1, "Mountain": 55}
+    assert sum(q for _, b, q in resolved if b == "side") == 15

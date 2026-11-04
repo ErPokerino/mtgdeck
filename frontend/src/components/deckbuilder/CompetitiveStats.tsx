@@ -51,6 +51,11 @@ export function ManaRequirements({ analysis }: { analysis: ListAnalysis | null }
       </p>
       <p className="text-xs text-slate-400">
         2–5 terre nelle 7 iniziali: <strong className="text-slate-200">{pct(analysis.odds.p_2_to_5_lands_in_7)}</strong>
+        {analysis.odds.p_2_to_5_lands_within_one_mulligan != null && (
+          <>
+            {" "}(<strong className="text-slate-200">{pct(analysis.odds.p_2_to_5_lands_within_one_mulligan)}</strong> entro un mulligan)
+          </>
+        )}
         {" · "}3 terre al turno 3:{" "}
         <strong className="text-slate-200">{pct(analysis.odds.p_3_lands_by_t3_play)}</strong> play /{" "}
         <strong className="text-slate-200">{pct(analysis.odds.p_3_lands_by_t3_draw)}</strong> draw
@@ -81,6 +86,30 @@ export function InteractionSummary({ analysis }: { analysis: ListAnalysis | null
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** How the main deck is built and which field archetypes are built the same way. */
+export function StructureSummary({ analysis }: { analysis: ListAnalysis | null }) {
+  const s = analysis?.structure;
+  if (!s || s.nearest.length === 0) return null;
+  const v = s.values;
+  return (
+    <div className="bg-[#090C12] border border-[#192030] rounded-lg p-3 space-y-1 text-xs">
+      <p className="text-slate-400">
+        Struttura del main · creature {v.creatures} · interazione {v.interaction} · vantaggio
+        carte {v.card_advantage} · sweeper {v.sweepers} · counter {v.counters}
+      </p>
+      <p className="text-slate-200">
+        Costruita come:{" "}
+        {s.nearest.map((n) => `${n.archetype} (${n.category})`).join(", ")}
+      </p>
+      {s.issues?.map((issue) => (
+        <p key={issue} className="text-amber-200" role="status">
+          {issue}
+        </p>
+      ))}
     </div>
   );
 }

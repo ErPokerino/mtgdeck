@@ -118,3 +118,19 @@ def test_card_search_filters_by_function(db, cards):
             ).json()["cards"]
         ]
     assert names == ["Bolt"]
+
+
+def test_builder_analysis_says_which_field_archetypes_the_list_is_built_like(client, meta):
+    body = {
+        "name": "Burn",
+        "format_id": "modern",
+        "archetype": "aggro",
+        "cards": [
+            {"oracle_id": "Bolt", "card_name": "Bolt", "board": "main", "quantity": 4},
+            {"oracle_id": "Mountain", "card_name": "Mountain", "board": "main", "quantity": 56},
+        ],
+    }
+    structure = client.post("/api/decks/analyze", json=body).json()["competitive"]["structure"]
+    assert structure["values"]["interaction"] == 4 and structure["requested"] == "aggro"
+    # Only Mono Red has complete lists in the fixture: one archetype is no yardstick.
+    assert structure["nearest"] == [] and structure["issues"] == []

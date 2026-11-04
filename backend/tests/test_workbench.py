@@ -1,7 +1,6 @@
 from datetime import timedelta
 from types import SimpleNamespace
 import pytest
-from pydantic import ValidationError
 from app.models import Card, Deck, GuideVersion, DeckRevision, SyncLog, utcnow
 from app.services.deck_validator import validate_deck_entries, parse_decklist_text
 from app.services.guide_quality import (

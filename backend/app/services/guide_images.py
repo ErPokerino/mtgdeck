@@ -92,5 +92,5 @@ def load_guide_images(cards):
     # Download each distinct URL once, regardless of its appearances in list, hands and roles.
     unique = list(dict.fromkeys(urls.values()))
     with ThreadPoolExecutor(max_workers=6) as pool:
-        downloaded = dict(zip(unique, pool.map(fetch_card_image, unique)))
+        downloaded = dict(zip(unique, pool.map(fetch_card_image, unique), strict=True))
     return {key: downloaded[url] for key, url in urls.items() if downloaded[url]}

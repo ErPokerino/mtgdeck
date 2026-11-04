@@ -326,7 +326,48 @@ export interface FormatMetaResponse {
 }
 
 /** Deterministic analytics computed by the backend on a generated list. */
+/** A meta archetype's consensus 75 as importable text. */
+export interface ConsensusListText {
+  archetype_id: number;
+  name: string;
+  meta_share_pct: number;
+  lists_count: number;
+  text: string;
+}
+
+/** Expected cost of the next AI run, averaged over the latest real ones. */
+export interface RunEstimate {
+  skill: "deck_generation" | "deck_guide" | "matchup_spot";
+  model_id: string | null;
+  runs: number;
+  same_model?: boolean;
+  avg_duration_s?: number;
+  avg_input_tokens?: number | null;
+  avg_output_tokens?: number | null;
+  metered_runs?: number;
+  avg_cost?: number | null;
+  currency?: string | null;
+}
+
+/** Main-deck structure and the field archetypes built most like it. */
+export interface ListStructure {
+  values: {
+    creatures: number;
+    avg_mv: number;
+    interaction: number;
+    card_advantage: number;
+    sweepers: number;
+    counters: number;
+    lands: number;
+  };
+  nearest: Array<{ archetype: string; category: string; distance: number }>;
+  requested: string;
+  /** Builder only: the list is built like another plan than the one requested. */
+  issues?: string[];
+}
+
 export interface ListAnalysis {
+  structure?: ListStructure;
   main_count: number;
   side_count: number;
   land_count: number;
@@ -353,6 +394,7 @@ export interface ListAnalysis {
   odds: {
     lands_in_opening_7: number;
     p_2_to_5_lands_in_7: number;
+    p_2_to_5_lands_within_one_mulligan?: number;
     p_3_lands_by_t3_play: number;
     p_3_lands_by_t3_draw: number;
     p_4_lands_by_t4_play: number;
@@ -435,7 +477,13 @@ export type GenerationStartingPoint =
     }
   | {
       mode: "brew";
-      references: Array<{ archetype: string; meta_share_pct: number; lists_count: number }>;
+      references: Array<{
+        archetype: string;
+        meta_share_pct: number;
+        lists_count: number;
+        category?: string;
+        role?: string;
+      }>;
     };
 
 export interface DeckGenerationResult {

@@ -1,8 +1,7 @@
 import json
-from types import SimpleNamespace
 import pytest
 from sqlalchemy.orm import sessionmaker
-from app.models import GuideJob, GuideVersion, AIRun, Deck
+from app.models import GuideJob, GuideVersion
 from app.services import guide_jobs, guide_pipeline
 from app.skills import runner
 from app.skills.schemas import (

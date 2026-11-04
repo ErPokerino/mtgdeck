@@ -269,3 +269,21 @@ def test_new_nullable_columns_are_added_to_existing_tables(tmp_path):
     with engine.connect() as conn:
         assert conn.execute(text("SELECT quality_status FROM meta_snapshots")).scalar() is None
     engine.dispose()
+
+
+def test_net_card_advantage_drops_cantrips_loot_and_rummage():
+    tags = [
+        {"id": "ca", "slug": "card-advantage", "parent_ids": [], "taggings": []},
+        {"id": "d", "slug": "draw", "parent_ids": ["ca"], "taggings": []},
+        {"id": "pd", "slug": "pure-draw", "parent_ids": ["d"], "taggings": [{"oracle_id": "Divination"}]},
+        {"id": "ct", "slug": "cantrip", "parent_ids": ["pd"], "taggings": [{"oracle_id": "Opt"}]},
+        {"id": "lo", "slug": "rummage", "parent_ids": ["d"], "taggings": [{"oracle_id": "Faithless Looting"}]},
+        {"id": "tv", "slug": "tormenting-voice", "parent_ids": ["lo"], "taggings": [{"oracle_id": "Tormenting Voice"}]},
+        {"id": "im", "slug": "impulse", "parent_ids": ["ca"], "taggings": [{"oracle_id": "Memory Deluge"}]},
+    ]
+    from app.services.card_knowledge import DERIVED_TAGS, FUNCTIONAL_TAGS
+
+    out = expand_tags(tags, FUNCTIONAL_TAGS, DERIVED_TAGS)
+    assert out["card-advantage"] == {"Divination", "Opt", "Faithless Looting", "Tormenting Voice", "Memory Deluge"}
+    assert out["card-advantage-net"] == {"Divination", "Tormenting Voice", "Memory Deluge"}
+    assert out["cantrip"] == {"Opt"}

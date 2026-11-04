@@ -133,3 +133,25 @@ def test_provider_usage_is_recorded_and_priced(monkeypatch):
     price = {"inputPerMillion": 1.0, "outputPerMillion": 10.0}
     assert quality.run_cost(provider.usage, price) == pytest.approx(0.006)
     assert quality.run_cost(provider.usage, None) is None
+
+
+def test_estimate_uses_the_latest_runs_of_the_chosen_model(db, http, monkeypatch):
+    from app.models import AIRun
+
+    def run(model, inp, out, ms):
+        db.add(AIRun(skill_name="deck_guide", prompt_version="v7", model_id=model, provider="t",
+                     duration_ms=ms, usage_json={"input": inp, "output": out, "thought": 0}))
+
+    run("flash", 10_000, 1_000, 60_000)
+    run("argon", 80_000, 20_000, 240_000)
+    run("argon", 100_000, 20_000, 300_000)
+    db.commit()
+    monkeypatch.setattr(quality, "model_pricing", lambda: {"argon": {"inputPerMillion": 1.0, "outputPerMillion": 10.0, "currency": "USD"}})
+    est = http.get("/api/quality/estimate?skill=deck_guide&model_id=argon").json()
+    assert est["runs"] == 2 and est["same_model"]
+    assert est["avg_input_tokens"] == 90_000 and est["avg_output_tokens"] == 20_000
+    assert est["avg_duration_s"] == 270 and est["avg_cost"] == pytest.approx(0.29)
+    # No run of this model yet: other models' runs, said so, and no price.
+    other = http.get("/api/quality/estimate?skill=deck_guide&model_id=new").json()
+    assert other["runs"] == 3 and not other["same_model"] and other["avg_cost"] is None
+    assert http.get("/api/quality/estimate?skill=matchup_spot").json()["runs"] == 0

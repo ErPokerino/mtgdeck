@@ -225,6 +225,27 @@ def backfill_missing_revisions(db: Session) -> int:
     return len(missing)
 
 
+def refresh_derived_tags(db: Session) -> bool:
+    """Tags ingested by an older version lack the derived ones (net card advantage):
+    rebuild them from the local Tagger file instead of waiting for the next sync."""
+    from app.config import DATA_DIR
+    from app.models import CardTag
+    from app.services.card_knowledge import DERIVED_TAGS, ingest_tags
+
+    path = DATA_DIR / "scryfall_oracle_tags.jsonl.gz"
+    if not path.exists() or not db.query(CardTag.oracle_id).first():
+        return False
+    if db.query(CardTag.oracle_id).filter(CardTag.tag.in_(list(DERIVED_TAGS))).first():
+        return False
+    try:
+        ingest_tags(db, path)
+    except Exception:  # noqa: BLE001 - optional data: the old tags stay valid
+        db.rollback()
+        log.exception("derived tag refresh failed")
+        return False
+    return True
+
+
 def run_startup_repairs(engine: Engine, session_factory) -> None:
     add_missing_columns(engine)
     ensure_decks_autoincrement(engine)
@@ -245,3 +266,5 @@ def run_startup_repairs(engine: Engine, session_factory) -> None:
         backfilled = backfill_missing_revisions(db)
         if backfilled:
             log.info("created initial revisions for %s decks", backfilled)
+        if refresh_derived_tags(db):
+            log.info("functional tags re-ingested with derived tags")

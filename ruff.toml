@@ -1,0 +1,14 @@
+# Lint run by CI: `python -m ruff check backend scripts`.
+target-version = "py311"
+line-length = 120
+
+[lint]
+# Pyflakes (real errors), bugbear (likely bugs) and blind except: a catch-all must say
+# why with `# noqa: BLE001 - reason`.
+select = ["F", "B", "BLE"]
+# FastAPI's `Depends()` in argument defaults is the framework's idiom.
+ignore = ["B008"]
+
+[lint.per-file-ignores]
+# Pytest fixtures imported from other test modules are "redefined" as parameters.
+"backend/tests/*" = ["F811"]

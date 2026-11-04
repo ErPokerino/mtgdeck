@@ -213,7 +213,7 @@ def archetype_colors(stats: ArchetypeStats, cards_by_oid: Dict[str, Any]) -> Lis
     """
     required: set = set()
     hybrids: List[List[str]] = []
-    for oid, usage in stats.cards.items():
+    for oid in stats.cards:
         card = cards_by_oid.get(oid)
         if not card or stats.main_inclusion(oid) < 25:
             continue

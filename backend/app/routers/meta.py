@@ -198,6 +198,43 @@ async def trigger_meta_sync(
     }
 
 
+@router.get("/{format_id}/consensus-lists")
+def consensus_lists(format_id: str, limit: int = 8, db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
+    """Current consensus 75 of the most played archetypes, as importable text.
+
+    Replaces hand-written sample lists, which went stale with every set and ban."""
+    from app.services import deck_engine
+
+    snap = deck_engine.latest_snapshot(db, format_id.lower())
+    if not snap:
+        return []
+    out = []
+    archs = (
+        db.query(MetaArchetype)
+        .filter(MetaArchetype.snapshot_id == snap.id)
+        .order_by(MetaArchetype.meta_share_pct.desc())
+    )
+    for arch in archs:
+        if len(out) >= max(1, min(limit, 20)):
+            break
+        con = deck_engine.consensus_list(db, arch)
+        if not con:
+            continue
+        lines = ["Deck", *(f"{c.quantity} {c.card.name}" for c in con.main)]
+        if con.side:
+            lines += ["", "Sideboard", *(f"{c.quantity} {c.card.name}" for c in con.side)]
+        out.append(
+            {
+                "archetype_id": arch.id,
+                "name": arch.name,
+                "meta_share_pct": arch.meta_share_pct,
+                "lists_count": con.lists_count,
+                "text": "\n".join(lines),
+            }
+        )
+    return out
+
+
 @router.get("/{format_id}/archetypes/{archetype_id}")
 def get_archetype_detail(
     format_id: str, archetype_id: int, db: Session = Depends(get_db)

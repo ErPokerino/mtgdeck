@@ -1,6 +1,6 @@
 import React from "react";
 import { AlertTriangle, CheckCircle2, ShieldAlert } from "lucide-react";
-import type { DeckGenerationResult, ListAnalysis } from "../../types";
+import type { DeckGenerationResult, ListAnalysis, ListStructure } from "../../types";
 import { ColorBadges } from "../common/ManaCost";
 
 const pct = (p: number) => `${Math.round(p * 100)}%`;
@@ -71,6 +71,33 @@ function Interaction({
   );
 }
 
+const STRUCTURE_LABELS: Array<[keyof ListStructure["values"], string]> = [
+  ["creatures", "Creature"],
+  ["interaction", "Interazione"],
+  ["card_advantage", "Vantaggio carte"],
+  ["sweepers", "Sweeper"],
+  ["counters", "Counter"],
+];
+
+/** How the list is built, and which field archetypes are built the same way. */
+function Structure({ s }: { s: ListStructure }) {
+  return (
+    <div>
+      <p className="eyebrow">Struttura del main</p>
+      <p className="mt-2 text-sm text-slate-300">
+        {STRUCTURE_LABELS.map(([k, label]) => `${label} ${s.values[k]}`).join(" · ")}
+      </p>
+      {s.nearest.length > 0 && (
+        <p className="mt-1 text-sm text-slate-400">
+          Costruita come:{" "}
+          {s.nearest.map((n) => `${n.archetype} (${n.category})`).join(", ")}
+          {s.requested && ` · archetipo richiesto: ${s.requested}`}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function AnalysisPanel({ a }: { a: ListAnalysis }) {
   return (
     <section className="panel space-y-5">
@@ -91,7 +118,7 @@ function AnalysisPanel({ a }: { a: ListAnalysis }) {
           </p>
         </div>
         <div>
-          <p className="eyebrow">Mana value medio</p>
+          <p className="eyebrow">MV medio</p>
           <p className="text-2xl font-bold mt-1">{a.avg_mana_value_nonland}</p>
         </div>
         <div>
@@ -136,10 +163,15 @@ function AnalysisPanel({ a }: { a: ListAnalysis }) {
         <Interaction title="Interazione nel main" data={a.interaction_main} />
         <Interaction title="Interazione in sideboard" data={a.interaction_side} />
       </div>
+      {a.structure && <Structure s={a.structure} />}
       <div>
         <p className="eyebrow">Probabilità</p>
         <ul className="mt-2 text-sm text-slate-300 space-y-1">
-          <li>Da 2 a 5 terre nelle 7 iniziali: {pct(a.odds.p_2_to_5_lands_in_7)}</li>
+          <li>
+            Da 2 a 5 terre nelle 7 iniziali: {pct(a.odds.p_2_to_5_lands_in_7)}
+            {a.odds.p_2_to_5_lands_within_one_mulligan != null &&
+              `, ${pct(a.odds.p_2_to_5_lands_within_one_mulligan)} entro un mulligan (London)`}
+          </li>
           <li>
             3 terre entro il turno 3: {pct(a.odds.p_3_lands_by_t3_play)} on the play,{" "}
             {pct(a.odds.p_3_lands_by_t3_draw)} on the draw
@@ -190,9 +222,12 @@ export function GenerationReport({
           <p className="mt-2 text-slate-200">
             Brew dalla tua tesi.{" "}
             {start.references.length > 0
-              ? `Riferimenti di densità: ${start.references
-                  .map((r) => `${r.archetype} (${r.meta_share_pct}%)`)
-                  .join(", ")}.`
+              ? `Liste di riferimento: ${start.references
+                  .map(
+                    (r) =>
+                      `${r.archetype} (${r.meta_share_pct}%${r.role ? `, ${r.role}` : ""})`,
+                  )
+                  .join("; ")}.`
               : "Nessuna lista di riferimento compatibile."}
           </p>
         )}

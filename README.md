@@ -6,6 +6,22 @@ Workbench locale per preparare mazzi MTG competitivi in Standard, Pioneer e Mode
 
 Richiede Python 3.11+ e Node.js 22+.
 
+Il modo più semplice è un doppio clic su **`avvia.bat`** nella cartella del progetto, oppure `.\avvia.ps1` da PowerShell. Al primo avvio crea `.venv`, installa le dipendenze e compila il frontend. Ai successivi ricompila solo se il frontend è cambiato. Poi avvia il server su http://127.0.0.1:8090 e apre il browser. Ctrl+C lo arresta.
+
+Opzioni:
+
+| Opzione | Effetto |
+|---|---|
+| `-Dev` | backend con ricarica automatica e Vite su http://127.0.0.1:5173 in una seconda finestra |
+| `-Db percorso.db` | usa un altro database SQLite, per esempio una copia per le prove |
+| `-Port 8091` | cambia la porta del server |
+| `-Setup` | reinstalla le dipendenze e ricompila il frontend |
+| `-NoBrowser` | non apre il browser |
+
+Se la porta è già occupata, lo script apre solo il browser sull'app già avviata.
+
+Avvio manuale:
+
 ```powershell
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r backend/requirements.txt
@@ -24,8 +40,12 @@ Al primo avvio vengono creati database e catalogo. La sincronizzazione iniziale 
 
 - **Deck Builder**: una nuova lista è una bozza nel browser. “Salva” la memorizza nel server e conserva una versione. La bozza viene recuperata dopo un reload e rimane disponibile quando cambi sezione.
 - **Generazione AI e importazione**: il mazzo viene salvato automaticamente. Le carte non riconosciute bloccano l'importazione, evitando liste parziali.
-- **Statistiche del builder**: fonti per colore rispetto ai requisiti di Karsten, terre tappate, probabilità di terre e interazione in main e sideboard, ricalcolate a ogni modifica. Eliminare una carta mostra "Annulla".
+- **Statistiche del builder**: fonti per colore rispetto ai requisiti di Karsten, terre tappate, probabilità di terre (anche entro un mulligan London) e interazione in main e sideboard, ricalcolate a ogni modifica. Eliminare una carta mostra "Annulla".
+- **Vantaggio carte**: conta solo le carte che fanno guadagnare carte. Cantrip, loot e rummage restano fuori perché lasciano invariato il numero di carte in mano. Il filtro "Cantrip" le mostra a parte.
+- **Import/Export**: invece di liste di esempio scritte a mano, puoi partire dalla lista di consenso di uno degli 8 archetipi più giocati del metagame corrente.
+- **Struttura del mazzo**: il builder conta creature, interazione, vantaggio carte, sweeper e counter del main, e dice a quali archetipi del campo la lista somiglia per costruzione ("Costruita come"). Se l'archetipo scelto è control o aggro e la lista è costruita come un altro piano, lo segnala.
 - **Ricerca carte**: "/" porta il focus sulla ricerca. C'è un filtro per funzione (rimozione, counter, pescata, hate al cimitero…, dai tag Scryfall) e i filtri attivi compaiono come chip rimovibili.
+- **Stima prima dell'avvio**: sotto ogni pulsante di AI Studio compaiono durata e token medi delle ultime 10 esecuzioni dello stesso tipo e modello. Se in `config/ai-models.json` è impostata la tariffa del modello, compare anche il costo.
 - **Generazione e Analisi matchup** girano sul server come lavori persistenti: AI Studio mostra la fase reale, permette di annullare e ritrova il lavoro dopo un reload. Dal Metagame, "Costruisci da questo archetipo" apre la generazione con quel punto di partenza.
 - **Playtest**: D pesca, T nuovo turno, U stappa, M mulligan, Z annulla. Su touch tieni premuta una carta per trascinarla in un'altra zona.
 - **Testi dell'interfaccia**: le convenzioni di lingua sono in `docs/GLOSSARIO.md`.
@@ -34,12 +54,15 @@ Al primo avvio vengono creati database e catalogo. La sincronizzazione iniziale 
   - Guide: matchup coperti, parole e carte avversarie per matchup, errori dei validatori, avvisi aperti.
   - Esecuzioni per versione del prompt e modello, con le tue valutazioni da 1 a 5 (in fondo a ogni guida).
   - Da riga di comando: `python quality_report.py pioneer [--json]` dalla cartella `backend`.
+  - **Set di valutazione fisso**: `python eval_generation.py` dalla cartella `backend` riesegue le richieste di `config/eval-set.json`, per esempio un brew control, una lista di consenso e un aggro. Salva il risultato in `output/eval/` e lo confronta con l'esecuzione precedente. Rieseguilo a ogni cambio di prompt o modello. Chiama davvero l'AI, quindi costa token e minuti; `--only <id>` limita a un caso e `--list` mostra i casi.
   - Ogni esecuzione AI registra i token del provider. Per vedere anche il costo medio imposta la tariffa del modello in `config/ai-models.json`, per esempio `"pricing": {"inputPerMillion": 1.25, "outputPerMillion": 10, "currency": "USD"}`, con i prezzi del tuo contratto. Senza tariffa il report mostra solo i token.
 - **Risultati reali**: il pulsante "Risultati" su un mazzo registra i tuoi match per archetipo avversario. La guida successiva li confronta con le stime.
 - **Mazzi e guide → Mazzi attivi**: cerca, apri, duplica, avvia il playtest, consulta le versioni o archivia una lista. Archiviare la toglie dai selettori, mantenendo dati e storico.
 - **Archiviati**: ripristina una lista oppure eliminala definitivamente dopo conferma.
 - **Guide salvate**: ogni generazione conserva una versione indipendente con la lista analizzata, modello, data e contesto. Anche le liste incollate hanno una guida archiviata. Puoi leggere ed esportare ogni versione in PDF con indice navigabile, lista, piani e tabelle di sidata.
 - Modificare le carte o il formato rende la guida precedente uno storico; non la presenta come aggiornata. Eliminare un mazzo elimina le sue revisioni, ma mantiene le guide e le rispettive liste.
+
+Il PDF usa DejaVu Sans quando è installato: è incluso in Windows e nell'immagine Docker, e su Linux si installa con `fonts-dejavu-core`. Così frecce e simboli come ≥ restano leggibili. Puoi indicare un'altra cartella con `PDF_FONT_DIR`. Senza quel font il PDF usa Helvetica e scrive i simboli in ASCII (`->`, `>=`).
 
 L’export PDF è illustrato anche per le versioni già salvate: lista testuale e griglia completa main/side con quantità, immagini in tutte le mani di esempio e in ogni scheda carta. Le schede delle vere carte a doppia faccia mostrano anche il retro disponibile. Il formato usa copertina con riepilogo, indice navigabile di soli capitoli, intestazioni di sezione e tabelle che continuano correttamente su più pagine.
 
@@ -59,7 +82,13 @@ Le skill motivano engine, densità, manabase, clock, interazioni Oracle, esclusi
 
 Il meta non limita le scelte: è il campo da battere. Il punto di partenza si sceglie in AI Studio:
 - **Lista di consenso di un archetipo del meta.** L'app aggrega le liste complete dell'archetipo con il metodo di Frank Karsten: ogni copia entra se la gioca il maggior numero di liste. Le carte nell'80% delle liste o più sono il *core*, le altre i *flex*. Ogni differenza della proposta rispetto al consenso deve essere motivata: carta, copie, matchup che migliora e costo opportunità.
-- **Brew dalla tua tesi.** Archetipi, colori e build-around fuori meta sono ammessi. Le due liste di consenso più vicine servono come riferimento di densità e come fonte di carte già testate.
+- **Brew dalla tua tesi.** Archetipi, colori e build-around fuori meta sono ammessi. Due liste di consenso servono come riferimento di densità e come fonte di carte già testate:
+  - quella più vicina **per colori**;
+  - quella più vicina **per piano**, cioè un archetipo della stessa categoria (control o aggro).
+
+  Prima contava solo il colore. Un "Rakdos control" riceveva così Rakdos Sacrifice e Jund, due aggro, e ne copiava le carte, per esempio 4 Bloodtithe Harvester. Ora ogni riferimento dichiara perché è stato scelto. Il modello prende carte da un riferimento con un piano diverso, non la sua struttura.
+
+Il modello riceve anche la **struttura degli archetipi del campo**: creature, MV medio, interazione, vantaggio carte, sweeper e counter delle liste di consenso. Mostra come si gioca il piano richiesto nel formato. In Pioneer, per esempio, i control vanno da 0-2 creature con counter e sweeper (UW, Boros) a liste d'attrito con 11 creature (The Rock). Sulla lista finale l'app calcola a quali archetipi somiglia per costruzione. Se è più vicina a un'altra categoria che a quella richiesta, la segnala alla revisione e negli avvisi.
 
 Il modello riceve il **campo atteso**: i primi 8 archetipi pesati per quota, ciascuno con il core, l'interazione attesa per lista (calcolata con i tag funzionali di Scryfall), la curva e la sideboard probabile. Riceve anche i testi Oracle completi delle carte chiave avversarie e del pool, cioè le carte osservate nel formato e lanciabili nei colori. Sono ammesse anche carte fuori pool, purché legali. La lista di staple scritta a mano è stata eliminata.
 
@@ -73,7 +102,7 @@ Il processo:
    - interazione nel main e in sideboard;
    - probabilità ipergeometriche.
 4. **Verifiche del ragionamento**: un piano di sideboard per ciascuno dei 5 archetipi principali, con IN e OUT bilanciati e disponibili, e i delta rispetto al consenso.
-5. **Revisione strategica** con un mandato diverso: cerca punti deboli contro i tier principali, slot morti, overboarding e affermazioni contraddette dai testi Oracle.
+5. **Revisione strategica** con un mandato diverso: cerca punti deboli contro i tier principali, slot morti, overboarding e affermazioni contraddette dai testi Oracle. Controlla anche la coerenza con l'archetipo richiesto: carte di un altro piano e slot copiati da un riferimento scelto solo per colori.
 
 Se il revisore trova problemi gravi o una verifica non è superata, il modello rivede la lista una volta sola. Una revisione che viola le regole del formato viene scartata e resta la lista precedente, già valida. Il risultato mostra:
 - punto di partenza e tabella dei delta;

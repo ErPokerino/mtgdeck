@@ -4,12 +4,14 @@ import type {
   ArchetypeDetail,
   Card,
   CardSearchResponse,
+  ConsensusListText,
   DeckDetail,
   DeckGenerationResult,
   DeckSummary,
   FormatDetail,
   FormatId,
   FormatInfo,
+  RunEstimate,
   FormatMetaResponse,
   ListAnalysis,
   SyncStatus,
@@ -242,6 +244,12 @@ export const api = {
   cancelAIJob: (id: number) =>
     apiFetch<AIJob>(`/api/ai/jobs/${id}/cancel`, { method: "POST" }),
 
+  getConsensusLists: (formatId: FormatId) =>
+    apiFetch<ConsensusListText[]>(`/api/meta/${formatId}/consensus-lists`),
+  getRunEstimate: (skill: RunEstimate["skill"], modelId?: string) =>
+    apiFetch<RunEstimate>(
+      `/api/quality/estimate?skill=${skill}${modelId ? `&model_id=${encodeURIComponent(modelId)}` : ""}`,
+    ),
   getQualityReport: (formatId: FormatId) =>
     apiFetch<any>(`/api/quality/report?format_id=${formatId}`),
   getRating: (kind: "guide" | "deck", id: number) =>

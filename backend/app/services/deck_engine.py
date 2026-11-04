@@ -48,7 +48,8 @@ INTERACTION_GROUPS = {
     "scarto": ("discard",),
     "rimozioni artefatti/incantesimi": ("removal-artifact", "removal-enchantment"),
     "hate al cimitero": ("hate-graveyard",),
-    "vantaggio carte": ("draw", "card-advantage"),
+    # Net card gain only: cantrips, loot and impulse-style selection are excluded.
+    "vantaggio carte": ("card-advantage-net",),
 }
 
 CORE_INCLUSION_PCT = 80.0
@@ -435,11 +436,13 @@ def analyze_list(
         return out
 
     total_lands = land_count  # MDFC are spells first; reported separately
+    p_keep_7 = sum(p_exact(k, total_lands, 7, main_size) for k in range(2, 6))
     odds = {
         "lands_in_opening_7": round(7 * total_lands / main_size, 2),
-        "p_2_to_5_lands_in_7": round(
-            sum(p_exact(k, total_lands, 7, main_size) for k in range(2, 6)), 3
-        ),
+        "p_2_to_5_lands_in_7": round(p_keep_7, 3),
+        # London mulligan: the second hand is again 7 cards, one goes to the bottom, so
+        # 2-5 lands in those 7 leave a 6-card hand with 2-4 lands. Independent draws.
+        "p_2_to_5_lands_within_one_mulligan": round(1 - (1 - p_keep_7) ** 2, 3),
         "p_3_lands_by_t3_play": round(p_at_least(3, total_lands, 9, main_size), 3),
         "p_3_lands_by_t3_draw": round(p_at_least(3, total_lands, 10, main_size), 3),
         "p_4_lands_by_t4_play": round(p_at_least(4, total_lands, 10, main_size), 3),
@@ -504,3 +507,155 @@ def analytics_warnings(analysis: dict) -> List[str]:
             f"{analysis['tapped_lands']['tapped']} terre entrano sempre tappate."
         )
     return warnings
+
+
+
+# ---------------------------------------------------------------------------
+# Structure: what a list is built to do, compared with the field's archetypes
+# ---------------------------------------------------------------------------
+
+STRUCTURE_LABELS = {
+    "creatures": "creature",
+    "avg_mv": "MV medio",
+    "interaction": "interazione",
+    "card_advantage": "vantaggio carte",
+    "sweepers": "sweeper",
+    "counters": "counter",
+    "lands": "terre",
+}
+# Lands say little about the plan: they stay out of the similarity measure.
+SIMILARITY_METRICS = ("creatures", "avg_mv", "interaction", "card_advantage", "sweepers", "counters")
+# Requested archetype -> source category it can be checked against. Midrange, ramp and
+# tempo have no category of their own in the sources; combo lists differ too much from
+# each other (a creature combo and a spell combo) to be a yardstick.
+ROLE_CATEGORY = {"control": "control", "aggro": "aggro"}
+INTERACTION_CORE = ("rimozioni", "counter", "sweeper", "scarto")
+
+
+def structure_profile(db: Session, entries: Iterable[Tuple[Card, str, int]]) -> Dict[str, float]:
+    """Main-deck structure: threats, interaction (removal, counters, sweepers, discard),
+    card advantage and curve height."""
+    main = [(c, q) for c, b, q in entries if b == "main" and q > 0]
+    nonland = [(c, q) for c, q in main if not is_land_card(c)]
+    tags = tags_for(db, [c.oracle_id for c, _ in nonland])
+
+    def copies(groups: Sequence[str]) -> int:
+        wanted = {t for g in groups for t in INTERACTION_GROUPS[g]}
+        return sum(q for c, q in nonland if set(tags.get(c.oracle_id, [])) & wanted)
+
+    mvs = [castable_mana_value(c) for c, q in nonland for _ in range(q)]
+    return {
+        "creatures": sum(q for c, q in nonland if "Creature" in (_faces(c)[0].get("type_line") or "")),
+        "avg_mv": round(sum(mvs) / len(mvs), 2) if mvs else 0.0,
+        "interaction": copies(INTERACTION_CORE),
+        "card_advantage": copies(("vantaggio carte",)),
+        "sweepers": copies(("sweeper",)),
+        "counters": copies(("counter",)),
+        "lands": sum(q for c, q in main if is_land_card(c)),
+    }
+
+
+def structure_text(structure: Dict[str, float]) -> str:
+    return ", ".join(f"{label} {structure[k]:g}" for k, label in STRUCTURE_LABELS.items())
+
+
+@dataclass
+class ArchetypeStructure:
+    name: str
+    category: str
+    share: float
+    structure: Dict[str, float]
+
+
+def archetype_structures(db: Session, snapshot: MetaSnapshot) -> List[ArchetypeStructure]:
+    """Structure of every archetype's consensus list, by observed share."""
+    out = []
+    archs = (
+        db.query(MetaArchetype)
+        .filter(MetaArchetype.snapshot_id == snapshot.id)
+        .order_by(MetaArchetype.meta_share_pct.desc())
+    )
+    for arch in archs:
+        con = consensus_list(db, arch)
+        if con:
+            out.append(
+                ArchetypeStructure(
+                    arch.name,
+                    (arch.category or "other").lower(),
+                    arch.meta_share_pct or 0.0,
+                    structure_profile(db, con.entries()),
+                )
+            )
+    return out
+
+
+def nearest_structures(
+    structure: Dict[str, float], field: Sequence[ArchetypeStructure], n: int = 3
+) -> List[Tuple[ArchetypeStructure, float]]:
+    """Field archetypes whose consensus list is built most like this one.
+    Euclidean distance on metrics scaled by their spread across the field."""
+    if len(field) < 2:
+        return []
+    scale = {}
+    for m in SIMILARITY_METRICS:
+        values = [a.structure[m] for a in field]
+        mean = sum(values) / len(values)
+        sd = (sum((v - mean) ** 2 for v in values) / len(values)) ** 0.5
+        scale[m] = sd or 1.0
+    scored = [
+        (a, round(sum(((structure[m] - a.structure[m]) / scale[m]) ** 2 for m in SIMILARITY_METRICS) ** 0.5, 2))
+        for a in field
+    ]
+    return sorted(scored, key=lambda s: s[1])[:n]
+
+
+def role_issues(
+    requested: Optional[str],
+    nearest: Sequence[Tuple[ArchetypeStructure, float]],
+    field: Sequence[ArchetypeStructure],
+) -> List[str]:
+    """The requested plan is a constraint: flag lists built like another category."""
+    category = ROLE_CATEGORY.get((requested or "").lower())
+    if not category or not nearest or not any(a.category == category for a in field):
+        return []
+    if any(a.category == category for a, _ in nearest[:2]):
+        return []
+    closest = ", ".join(f"{a.name} ({a.category})" for a, _ in nearest[:2])
+    same = [a.name for a in field if a.category == category][:3]
+    return [
+        f"Archetipo richiesto {requested}, ma per struttura (creature, curva, interazione, "
+        f"vantaggio carte) la lista è più vicina a {closest} che ai {category} del campo "
+        f"({', '.join(same)}). Ricostruisci la struttura o motiva perché questo {requested} è diverso."
+    ]
+
+
+_STRUCTURE_CACHE: Dict[tuple, List[ArchetypeStructure]] = {}
+
+
+def field_structures(db: Session, snapshot: Optional[MetaSnapshot]) -> List[ArchetypeStructure]:
+    """archetype_structures, cached per snapshot: the builder asks on every edit."""
+    if not snapshot:
+        return []
+    key = (id(db.get_bind()), snapshot.id, str(snapshot.fetched_at))
+    if key not in _STRUCTURE_CACHE:
+        _STRUCTURE_CACHE.clear()
+        _STRUCTURE_CACHE[key] = archetype_structures(db, snapshot)
+    return _STRUCTURE_CACHE[key]
+
+
+def structure_summary(
+    db: Session, entries: List[Tuple[Card, str, int]], fmt: str, requested: Optional[str] = None
+) -> Dict[str, object]:
+    """Structure of a list, the field archetypes built most like it and, when a plan is
+    requested, whether the list is built like that plan."""
+    values = structure_profile(db, entries)
+    main_size = sum(q for _, b, q in entries if b == "main")
+    # A list still being built would be compared with finished ones: wait for 60 cards.
+    field = field_structures(db, latest_snapshot(db, fmt)) if main_size >= 60 else []
+    near = nearest_structures(values, field)
+    return {
+        "values": values,
+        "nearest": [{"archetype": a.name, "category": a.category, "distance": d} for a, d in near],
+        "requested": requested or "",
+        "issues": role_issues(requested, near, field),
+    }

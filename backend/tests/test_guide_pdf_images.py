@@ -24,7 +24,7 @@ def test_every_hand_role_and_deck_entry_is_illustrated(guide_data):
     names = ["Plains", "Island", "Mountain", "Forest"]
     images = {
         name.lower(): png(color)
-        for name, color in zip(names, ("red", "green", "blue", "yellow"))
+        for name, color in zip(names, ("red", "green", "blue", "yellow"), strict=True)
     }
     guide_data["mulligan_examples"] = [
         dict(
@@ -52,14 +52,14 @@ def test_every_hand_role_and_deck_entry_is_illustrated(guide_data):
     )
     texts = [p.extract_text() for p in reader.pages]
     for i in range(1, 5):
-        page = next(p for p, text in zip(reader.pages, texts) if f"Mano {i} /" in text)
+        page = next(p for p, text in zip(reader.pages, texts, strict=True) if f"Mano {i} /" in text)
         assert drawings(reader, page) >= 7
     gallery = next(
-        p for p, text in zip(reader.pages, texts) if "Mainboard / vista carte" in text
+        p for p, text in zip(reader.pages, texts, strict=True) if "Mainboard / vista carte" in text
     )
     assert drawings(reader, gallery) == 4
     roles = next(
-        p for p, text in zip(reader.pages, texts) if "Copie, ruolo e decisioni" in text
+        p for p, text in zip(reader.pages, texts, strict=True) if "Copie, ruolo e decisioni" in text
     )
     start = (
         reader.pages.index(roles)
@@ -194,6 +194,21 @@ def test_very_long_role_explanations_paginate_without_clipping(guide_data):
         )
     )
     assert len(reader.pages) >= 6
-    assert (
-        sum(p.extract_text().count("Decisione corretta") for p in reader.pages) == 200
+    # Count single words: a line or page break may fall inside the phrase.
+    text = " ".join(p.extract_text() for p in reader.pages)
+    assert text.count("Decisione") == 200 and text.count("contestualizzata") == 200
+
+
+def test_signs_outside_winansi_survive_in_the_pdf(guide_data):
+    from app.services import guide_pdf
+
+    guide_data["executive_summary"] = "Con ≥ 3 terre → tieni; con ≤ 1 → mulligan"
+    text = " ".join(
+        p.extract_text()
+        for p in PdfReader(BytesIO(render_guide_pdf(guide_data, "Segni", "modern", [], {}))).pages
     )
+    if guide_pdf.UNICODE_FONT:
+        assert "≥ 3 terre → tieni" in text
+    else:  # Helvetica fallback: spelled out instead of dropped
+        assert ">= 3 terre -> tieni" in text
+    assert guide_pdf.pdf_text("a → b") in ("a → b", "a -> b")

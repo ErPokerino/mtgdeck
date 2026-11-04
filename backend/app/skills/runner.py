@@ -141,7 +141,7 @@ def _format_entries_with_oracle(entries: List[Tuple[Card, str, int]]) -> str:
         probabilities = ""
         if board == "main" and total >= 10:
 
-            def at_least_one(draws):
+            def at_least_one(draws, qty=qty):
                 return 100 * (
                     1
                     - (
@@ -219,7 +219,7 @@ def run_deck_guide_skill(
                 )
             )
             db.commit()
-        except Exception:
+        except Exception:  # noqa: BLE001 - recording a failure must not hide the original error
             db.rollback()
             logging.getLogger("uvicorn.error").warning(
                 "Unable to record failed deck_guide run"

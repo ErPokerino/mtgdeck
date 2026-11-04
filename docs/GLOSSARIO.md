@@ -22,7 +22,7 @@ Deck Builder, Set & Banlist, Metagame, AI Studio, Playtest, Mazzi e guide.
 | sidata, piano di sideboard | sideboarding | |
 | archetipo, campo atteso, quota | meta share | "quota" è la percentuale del meta |
 | lista di consenso | sample deck, lista campione | lista aggregata dalle liste da torneo |
-| mazzo di esempio | sample | le liste precaricate in Import/Export |
+| lista di consenso | mazzo di esempio, sample | anche in Import/Export: le liste aggregate del meta corrente |
 | Common, Uncommon, Rare, Mythic | Mythic Rare | rarità in inglese, come sulle carte |
 | Creature, Instant, Sorcery, Land… | | tipi in inglese nei filtri, perché coincidono con il testo delle carte |
 
@@ -37,5 +37,8 @@ Deck Builder, Set & Banlist, Metagame, AI Studio, Playtest, Mazzi e guide.
 | Punto di partenza, brew | |
 | Analisi matchup | Matchup spot |
 | Punti da verificare | Warning |
+| Struttura del main | profilo, fingerprint |
+| Costruita come | archetipo simile |
+| Riferimento per colori, riferimento per piano | lista campione |
 
 Quando aggiungi un testo all'interfaccia, controlla questa tabella; se introduci un termine nuovo, aggiungilo qui.

@@ -18,6 +18,16 @@ def quality_report(format_id: str, db: Session = Depends(get_db)):
     return quality.report(db, format_id)
 
 
+@router.get("/estimate")
+def cost_estimate(
+    skill: Literal["deck_generation", "deck_guide", "matchup_spot"],
+    model_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Duration, tokens and (with a configured price) cost of the next run."""
+    return quality.estimate(db, skill, model_id)
+
+
 class RatingIn(BaseModel):
     target_kind: Literal["guide", "deck"]
     target_id: int

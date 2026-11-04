@@ -45,7 +45,7 @@ import { ColorBadges, ManaCost, SetSymbol } from "../common/ManaCost";
 import { ResizableSplitPane } from "../common/ResizableSplitPane";
 import { ImportExportModal } from "./ImportExportModal";
 import { UndoToast } from "../common/UndoToast";
-import { InteractionSummary, ManaRequirements } from "./CompetitiveStats";
+import { InteractionSummary, ManaRequirements, StructureSummary } from "./CompetitiveStats";
 
 interface DeckBuilderViewProps {
   formatId: FormatId;
@@ -117,7 +117,8 @@ const FUNCTION_FILTERS = [
   { id: "counterspell", label: "Counter" },
   { id: "discard", label: "Scarto" },
   { id: "draw", label: "Pescata" },
-  { id: "card-advantage", label: "Vantaggio carte" },
+  { id: "card-advantage-net", label: "Vantaggio carte (no cantrip)" },
+  { id: "cantrip", label: "Cantrip" },
   { id: "hate-graveyard", label: "Hate al cimitero" },
   { id: "removal-artifact", label: "Rimozione artefatti" },
   { id: "removal-enchantment", label: "Rimozione incantesimi" },
@@ -1664,7 +1665,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                     onClick={() => setIsImportExportOpen(true)}
                     className="mt-1 px-3.5 py-1.5 rounded-lg bg-[#161E31] hover:bg-[#1F2A44] border border-[#C8AA6E]/40 text-xs font-semibold text-[#F3E5C8] cursor-pointer"
                   >
-                    Importa una lista o carica il mazzo di esempio (
+                    Importa una lista o parti da una lista di consenso (
                     {formatId.toUpperCase()})
                   </button>
                 </div>
@@ -2055,6 +2056,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   </div>
                 </div>
                 <InteractionSummary analysis={competitive} />
+                <StructureSummary analysis={competitive} />
               </div>
             </div>
           </div>

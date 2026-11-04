@@ -8,7 +8,7 @@ draw...) deterministically.
 import gzip
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Set
+from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
 import orjson
 from sqlalchemy.orm import Session
@@ -45,6 +45,27 @@ FUNCTIONAL_TAGS = [
     "mill",
 ]
 
+# Derived tags: a Tagger subtree without the branches that do not do what its name says.
+# "card-advantage" folds in cantrips, loot and rummage, which leave the number of cards
+# in hand unchanged: a burn deck full of cantrips would look like a control deck.
+# "card-advantage-net" keeps the cards that gain cards. Impulse and consult stay: "look
+# at the top N, put two in hand" (Memory Deluge) is real advantage.
+CARD_NEUTRAL_TAGS = (
+    "cantrip",
+    "delayed-cantrip",
+    "brainstorm",
+    "sift",
+    "loot",
+    "loot-to-exile",
+    "loot-to-library",
+    "rummage",
+    "rummage-to-library",
+    "repeatable-rummage",
+)
+# Branches below a pruned tag that still gain a card (discard one, draw two).
+CARD_NEUTRAL_KEEP = ("tormenting-voice",)
+DERIVED_TAGS = {"card-advantage-net": ("card-advantage", CARD_NEUTRAL_TAGS, CARD_NEUTRAL_KEEP)}
+
 
 def _jsonl(path: Path) -> Iterable[dict]:
     with gzip.open(path, "rb") as handle:
@@ -76,8 +97,15 @@ def ingest_rulings(db: Session, path: Path) -> int:
     return len(rows)
 
 
-def expand_tags(tags: List[dict], wanted: Iterable[str]) -> Dict[str, Set[str]]:
-    """slug -> oracle ids tagged with it or with any descendant tag."""
+def expand_tags(
+    tags: List[dict],
+    wanted: Iterable[str],
+    derived: Dict[str, Tuple[str, Sequence[str], Sequence[str]]] = {},  # noqa: B006 - read only
+) -> Dict[str, Set[str]]:
+    """slug -> oracle ids tagged with it or with any descendant tag.
+
+    `derived` adds tags built from a subtree minus pruned branches:
+    name -> (root slug, pruned slugs, slugs kept even below a pruned one)."""
     by_id = {t["id"]: t for t in tags}
     children: Dict[str, List[str]] = defaultdict(list)
     for t in tags:
@@ -85,22 +113,29 @@ def expand_tags(tags: List[dict], wanted: Iterable[str]) -> Dict[str, Set[str]]:
             children[parent].append(t["id"])
     by_slug = {t["slug"]: t for t in tags}
 
-    def collect(tag_id: str, seen: Set[str]) -> Set[str]:
+    def collect(tag_id: str, seen: Set[str], prune=(), keep=(), pruned=False) -> Set[str]:
         if tag_id in seen or tag_id not in by_id:
             return set()
         seen.add(tag_id)
-        found = {x["oracle_id"] for x in by_id[tag_id].get("taggings") or []}
+        slug = by_id[tag_id]["slug"]
+        if slug in keep:
+            pruned = False
+        elif slug in prune:
+            pruned = True
+        found = set() if pruned else {x["oracle_id"] for x in by_id[tag_id].get("taggings") or []}
         for child in children[tag_id]:
-            found |= collect(child, seen)
+            found |= collect(child, seen, prune, keep, pruned)
         return found
 
-    return {
-        slug: collect(by_slug[slug]["id"], set()) for slug in wanted if slug in by_slug
-    }
+    out = {slug: collect(by_slug[slug]["id"], set()) for slug in wanted if slug in by_slug}
+    for name, (root, prune, keep) in derived.items():
+        if root in by_slug:
+            out[name] = collect(by_slug[root]["id"], set(), set(prune), set(keep))
+    return out
 
 
 def ingest_tags(db: Session, path: Path) -> int:
-    expanded = expand_tags(list(_jsonl(path)), FUNCTIONAL_TAGS)
+    expanded = expand_tags(list(_jsonl(path)), FUNCTIONAL_TAGS, DERIVED_TAGS)
     rows = [{"oracle_id": oid, "tag": slug} for slug, oids in expanded.items() for oid in oids]
     db.query(CardTag).delete()
     for i in range(0, len(rows), 5000):

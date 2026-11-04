@@ -492,7 +492,33 @@ Restano aperti:
 
   Verificato con eventi touch simulati a 375 px.
 
-Resta aperto: un set di valutazione fisso da rigenerare a ogni cambio di prompt.
+### Coerenza con l'archetipo richiesto e set di valutazione (2026-11-04)
+
+**Il caso.** Un brew Pioneer "Rakdos control" con Kroxa aveva 4 Bloodtithe Harvester nel main. La causa: i riferimenti dei brew erano scelti quasi solo per colore (+30 per colore in comune, +20 per la stessa categoria). Il brew ha ricevuto Rakdos Sacrifice (aggro, 2%), dove Bloodtithe è un 4-of nel 92% delle liste, e Jund (aggro). Nessuna lista control ha fatto da riferimento. Il critico giudicava solo il campo, non la coerenza con il piano.
+
+**Interventi:**
+- **Riferimenti per ruolo.** Uno per colori e uno per piano, cioè lo stesso archetipo-categoria, con la quota prima della sovrapposizione di colori. Ogni riferimento dichiara nel contesto e nel report perché è stato scelto. Per lo stesso caso ora sono Rakdos Sacrifice ("per colori, piano aggro") e The Rock ("per piano, control").
+- **Struttura (`deck_engine.structure_profile`).** Creature, MV medio, interazione, vantaggio carte, sweeper, counter e terre del main, calcolati per ogni archetipo del campo dalla sua lista di consenso. Il generatore li riceve in una tabella. Nel contesto e nel report la lista finale riporta gli archetipi più vicini, con la distanza euclidea sulle metriche scalate per la loro varianza nel campo.
+- **Verifica del piano (`role_issues`).** Per control e aggro: se nessuno dei due archetipi più vicini è della categoria richiesta, l'avviso entra nelle verifiche deterministiche e fa scattare la revisione. Midrange, tempo e ramp non hanno una categoria nelle fonti. Le liste combo sono troppo diverse tra loro, per esempio Creativity e Greasefang. Nessuno dei due casi viene verificato.
+- **Prompt.** Generazione v5.1.0 (sezione "Archetipo richiesto", uso dei riferimenti per ruolo), critico v1.1.0 (punto 7, coerenza con il piano), revisione v1.1.0.
+- **Builder.** "Costruita come" nelle statistiche, per qualsiasi lista, con l'avviso se l'archetipo scelto non torna. Le strutture del campo sono in cache per snapshot.
+
+**Che cosa ha detto la misura sul mazzo originale.** Kroxa ha 10 creature, 25 interazioni e MV medio 2,03. Per struttura è più vicino a Dimir Control e The Rock, cioè è un control d'attrito come lo intende il campo Pioneer. Il problema non era l'etichetta del mazzo ma la provenienza di quelle carte.
+
+**Set di valutazione fisso.** `config/eval-set.json` contiene 4 casi: il brew Kroxa control, il consenso del primo archetipo Pioneer, un brew mono-rosso aggro e il consenso del primo archetipo Modern. `backend/eval_generation.py` li riesegue senza salvare i mazzi, salva il risultato in `output/eval/` e lo confronta con l'esecuzione precedente. Per ogni caso registra metriche, struttura, verdetto del critico, avvisi e token.
+
+### Altri punti aperti chiusi (2026-11-04)
+
+- **Vantaggio carte senza cantrip (Fase 2).** Il tag Scryfall `card-advantage` include cantrip, loot, rummage, brainstorm e sift, che non cambiano il numero di carte in mano. UR Aggro risultava così con 26 carte di vantaggio, più di ogni control. È stato aggiunto un tag derivato, `card-advantage-net`: lo stesso sottoalbero senza quei rami, ma con Tormenting Voice (+1 netto). Impulse e consult restano, perché Memory Deluge è vantaggio reale. Il gruppo "vantaggio carte" di analisi, struttura e campo usa il tag derivato. Risultati: UR Aggro 15, Izzet Control 10, Jeskai Control 19. All'avvio i database esistenti rigenerano i tag dal file Tagger locale in meno di un secondo, se manca il tag derivato. Il builder ha i filtri "Vantaggio carte (no cantrip)" e "Cantrip".
+- **Mulligan (Fase 2).** L'analisi calcola anche la probabilità di una mano con 2-5 terre entro un mulligan London: la seconda mano è ancora di 7 carte e una va in fondo, quindi vale 1-(1-p)². Compare nel builder, nel report di generazione e nel contesto dell'AI.
+- **G-11, stima prima dell'avvio.** `GET /api/quality/estimate` calcola durata, token in ingresso e in uscita e costo medi sulle ultime 10 esecuzioni dello stesso skill con lo stesso modello. Se quel modello non ha esecuzioni, usa gli altri modelli e lo dichiara. Il costo compare solo con una tariffa configurata. In AI Studio la stima sta sotto i pulsanti di generazione, guida e analisi matchup.
+- **Liste di esempio cablate (Fase 1).** Eliminate le tre liste scritte a mano in `ImportExportModal`, ormai superate da set e ban. `GET /api/meta/{formato}/consensus-lists` restituisce la lista di consenso dei primi 8 archetipi in formato importabile. Verificato sul database reale: 24 liste su 24 importate senza carte non riconosciute e valide.
+- **Font Unicode nel PDF (Fase 1).** Con DejaVu Sans disponibile (Windows, `fonts-dejavu-core` nel Dockerfile, `PDF_FONT_DIR`) il PDF lo incorpora e mostra → ≥ ≤. Altrimenti resta Helvetica, e quei segni vengono scritti in ASCII invece di sparire.
+- **Ruff in CI.** `ruff.toml` con le regole F, B e BLE; B008 è escluso perché `Depends()` è l'idioma di FastAPI. Corretti 6 `raise` senza `from`, gli `zip` senza `strict`, una variabile di ciclo catturata da una closure e gli import inutilizzati. I catch-all voluti dichiarano il motivo (`# noqa: BLE001 - …`). In CI c'è il passo `python -m ruff check backend scripts`.
+- **Ricerca FTS5 (Fase 1), valutata e lasciata così.** Sul catalogo completo (35.353 carte) la ricerca con `LIKE` impiega 11-95 ms per richiesta, HTTP compreso, sotto il debounce di 160 ms del builder. FTS5 cambierebbe i risultati (parole intere invece di sottostringhe) senza un guadagno percepibile.
+- **U7.** Le intestazioni della tabella carte del Metagame sono già sticky; la matrice euristica non viene più generata.
+
+Restano aperti: il trend grafico della qualità nel tempo (per il confronto prima/dopo c'è il set di valutazione) e la suddivisione di `runner.py` e `DeckBuilderView.tsx`. Midrange, tempo e ramp non hanno un controllo di struttura, perché le fonti non hanno quelle categorie.
 
 ---
 

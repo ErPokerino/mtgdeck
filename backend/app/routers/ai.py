@@ -28,7 +28,7 @@ def start_guide_job(
     try:
         return guide_jobs.create_job(db, payload, resume_id, legacy_run_id)
     except ValueError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/guide-jobs")
@@ -98,7 +98,7 @@ def start_deck_generation_job(
     try:
         return ai_jobs.create_job(db, "deck_generation", payload)
     except ValueError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/jobs/matchup-spot")
@@ -108,7 +108,7 @@ def start_matchup_job(
     try:
         return ai_jobs.create_job(db, "matchup_spot", payload)
     except ValueError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/jobs")
@@ -146,8 +146,8 @@ def api_generate_deck(
 ) -> Dict[str, Any]:
     try:
         return run_deck_generation_skill(db, payload)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001 - synchronous endpoint: any failure is the user's 400
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/deck-guide")
@@ -156,8 +156,8 @@ def api_deck_guide(
 ) -> Dict[str, Any]:
     try:
         return run_deck_guide_skill(db, payload)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001 - synchronous endpoint: any failure is the user's 400
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/matchup-spot")
@@ -166,8 +166,8 @@ def api_matchup_spot(
 ) -> Dict[str, Any]:
     try:
         return run_matchup_spot_skill(db, payload)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001 - synchronous endpoint: any failure is the user's 400
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/runs")

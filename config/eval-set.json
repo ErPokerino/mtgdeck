@@ -1,0 +1,32 @@
+{
+  "description": "Richieste di generazione fisse, da rieseguire a ogni cambio di prompt o modello con: python eval_generation.py (dalla cartella backend). base_archetype accetta il nome di un archetipo del metagame corrente oppure \"top\" (il primo per quota).",
+  "cases": [
+    {
+      "id": "pioneer-rakdos-kroxa-control",
+      "note": "Brew control con build-around: la struttura deve somigliare ai control del campo, non a un aggro dei colori.",
+      "format_id": "pioneer",
+      "archetype": "control",
+      "colors": ["B", "R"],
+      "build_around_cards": ["Kroxa, Titan of Death's Hunger"]
+    },
+    {
+      "id": "pioneer-meta-top",
+      "note": "Dalla lista di consenso dell'archetipo più giocato: delta motivati e core intatto.",
+      "format_id": "pioneer",
+      "base_archetype": "top"
+    },
+    {
+      "id": "pioneer-mono-red-aggro",
+      "note": "Brew aggro monocolore: curva bassa, molte minacce.",
+      "format_id": "pioneer",
+      "archetype": "aggro",
+      "colors": ["R"]
+    },
+    {
+      "id": "modern-meta-top",
+      "note": "Lista di consenso in un formato diverso.",
+      "format_id": "modern",
+      "base_archetype": "top"
+    }
+  ]
+}

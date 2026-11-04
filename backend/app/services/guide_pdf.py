@@ -1,7 +1,9 @@
 """Illustrated, paginated tournament primer. Model text is always escaped."""
 
+import os
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
@@ -10,6 +12,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     Flowable,
     KeepTogether,
@@ -29,6 +33,54 @@ PALE = colors.HexColor("#f1f5f4")
 LINE = colors.HexColor("#d6e1de")
 GOLD = colors.HexColor("#ba9650")
 WIDTH = 170 * mm
+
+
+def _register_fonts() -> tuple:
+    """A Unicode TrueType font when the system has one (DejaVu Sans: Windows, most Linux
+    distributions, `fonts-dejavu-core` in the Docker image), otherwise Helvetica. The
+    base-14 Helvetica only covers WinAnsi: arrows and comparison signs would vanish."""
+    dirs = [
+        os.environ.get("PDF_FONT_DIR", ""),
+        os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts"),
+        "/usr/share/fonts/truetype/dejavu",
+        "/usr/share/fonts/dejavu",
+        "/usr/share/fonts/TTF",
+        "/Library/Fonts",
+    ]
+    for folder in filter(None, dirs):
+        regular = Path(folder) / "DejaVuSans.ttf"
+        bold = Path(folder) / "DejaVuSans-Bold.ttf"
+        if regular.is_file() and bold.is_file():
+            try:
+                pdfmetrics.registerFont(TTFont("GuideSans", str(regular)))
+                pdfmetrics.registerFont(TTFont("GuideSans-Bold", str(bold)))
+                pdfmetrics.registerFontFamily(
+                    "GuideSans",
+                    normal="GuideSans",
+                    bold="GuideSans-Bold",
+                    italic="GuideSans",
+                    boldItalic="GuideSans-Bold",
+                )
+                return "GuideSans", "GuideSans-Bold"
+            except Exception:  # noqa: BLE001 - a broken font file falls back to Helvetica
+                continue
+    return "Helvetica", "Helvetica-Bold"
+
+
+FONT, FONT_BOLD = _register_fonts()
+UNICODE_FONT = FONT != "Helvetica"
+# Without a Unicode font, signs outside WinAnsi are spelled out instead of disappearing.
+ASCII_FALLBACK = {"→": "->", "←": "<-", "≥": ">=", "≤": "<=", "≠": "!=", "✓": "v", "★": "*", "−": "-"}
+
+
+def pdf_text(value) -> str:
+    text = str(value or "")
+    if not UNICODE_FONT:
+        for char in "‐‑‒−":
+            text = text.replace(char, "-")
+        for char, plain in ASCII_FALLBACK.items():
+            text = text.replace(char, plain)
+    return text
 
 
 class CardPicture(Flowable):
@@ -58,17 +110,17 @@ class CardPicture(Flowable):
         canvas.roundRect(0, 0, self.width, self.height, 2 * mm, fill=1, stroke=1)
         style = ParagraphStyle(
             "MissingCard",
-            fontName="Helvetica-Bold",
+            fontName=FONT_BOLD,
             fontSize=7,
             leading=9,
             alignment=TA_CENTER,
             textColor=INK,
         )
-        label = Paragraph(escape(self.name), style)
+        label = Paragraph(escape(pdf_text(self.name)), style)
         _, height = label.wrap(self.width - 4 * mm, self.height)
         label.drawOn(canvas, 2 * mm, max(5 * mm, (self.height - height) / 2))
         canvas.setFillColor(MUTED)
-        canvas.setFont("Helvetica", 5.5)
+        canvas.setFont(FONT, 5.5)
         canvas.drawCentredString(self.width / 2, 3 * mm, "Immagine non disponibile")
 
 
@@ -78,30 +130,30 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
     styles = getSampleStyleSheet()
     for label, options in {
         "BodyPro": dict(
-            fontName="Helvetica", fontSize=10, leading=14.5, spaceAfter=7, textColor=INK
+            fontName=FONT, fontSize=10, leading=14.5, spaceAfter=7, textColor=INK
         ),
         "TitlePro": dict(
-            fontName="Helvetica-Bold",
+            fontName=FONT_BOLD,
             fontSize=30,
             leading=35,
             spaceAfter=16,
             textColor=INK,
         ),
         "SmallPro": dict(
-            fontName="Helvetica", fontSize=8, leading=11, spaceAfter=6, textColor=MUTED
+            fontName=FONT, fontSize=8, leading=11, spaceAfter=6, textColor=MUTED
         ),
         "TablePro": dict(
-            fontName="Helvetica",
+            fontName=FONT,
             fontSize=8.5,
             leading=11.5,
             spaceAfter=2,
             textColor=INK,
         ),
         "DeckLine": dict(
-            fontName="Helvetica", fontSize=9, leading=13, spaceAfter=3, textColor=INK
+            fontName=FONT, fontSize=9, leading=13, spaceAfter=3, textColor=INK
         ),
         "CardTitle": dict(
-            fontName="Helvetica-Bold",
+            fontName=FONT_BOLD,
             fontSize=12,
             leading=16,
             spaceAfter=6,
@@ -109,17 +161,17 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
             keepWithNext=True,
         ),
         "CardCaption": dict(
-            fontName="Helvetica", fontSize=7.5, leading=9.5, spaceAfter=0, textColor=INK
+            fontName=FONT, fontSize=7.5, leading=9.5, spaceAfter=0, textColor=INK
         ),
         "StatLabel": dict(
-            fontName="Helvetica-Bold",
+            fontName=FONT_BOLD,
             fontSize=8,
             leading=11,
             spaceAfter=7,
             textColor=MUTED,
         ),
         "StatValue": dict(
-            fontName="Helvetica-Bold",
+            fontName=FONT_BOLD,
             fontSize=25,
             leading=30,
             spaceAfter=4,
@@ -129,6 +181,8 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         styles.add(ParagraphStyle(name=label, **options))
     styles["BodyPro"].allowWidows = 0
     styles["BodyPro"].allowOrphans = 0
+    for heading in ("Heading1", "Heading2"):
+        styles[heading].fontName = FONT_BOLD
     styles["Heading1"].textColor = INK
     styles["Heading1"].fontSize = 21
     styles["Heading1"].leading = 27
@@ -141,10 +195,7 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
     styles["Heading2"].spaceAfter = 7
 
     def p(value, style="BodyPro"):
-        text = str(value or "")
-        for char in "‐‑‒–—−":
-            text = text.replace(char, "-")
-        return Paragraph(escape(text).replace("\n", "<br/>"), styles[style])
+        return Paragraph(escape(pdf_text(value)).replace("\n", "<br/>"), styles[style])
 
     readers = {}
 
@@ -356,7 +407,7 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
     toc.levelStyles = [
         ParagraphStyle(
             "Contents",
-            fontName="Helvetica",
+            fontName=FONT,
             fontSize=10.5,
             leading=16,
             leftIndent=0,
@@ -399,7 +450,7 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
     def card_caption(entry):
         front = entry["card_name"].split(" // ")[0]
         return Paragraph(
-            f"<b>{int(entry['quantity'])}x</b> {escape(front)}", styles["CardCaption"]
+            f"<b>{int(entry['quantity'])}x</b> {escape(pdf_text(front))}", styles["CardCaption"]
         )
 
     def tile(entry, label, caption_height):
@@ -446,7 +497,7 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
                 max(label.wrap(30 * mm, 100 * mm)[1] for label in labels) + 1 * mm,
             )
             cells = [
-                tile(c, caption, caption_height) for c, caption in zip(chunk, labels)
+                tile(c, caption, caption_height) for c, caption in zip(chunk, labels, strict=True)
             ]
             rows.append(cells + [""] * (5 - len(cells)))
         story.append(
@@ -680,21 +731,21 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         canvas.saveState()
         canvas.setStrokeColor(LINE)
         canvas.line(20 * mm, 17 * mm, 190 * mm, 17 * mm)
-        canvas.setFont("Helvetica", 8)
+        canvas.setFont(FONT, 8)
         canvas.setFillColor(MUTED)
         canvas.drawString(
             20 * mm,
             12 * mm,
-            "AETHERDECK / Stime teoriche - verificare la legalita prima del torneo",
+            "AETHERDECK / Stime teoriche - verificare la legalità prima del torneo",
         )
         canvas.drawRightString(190 * mm, 12 * mm, str(doc.page))
         if doc.page > 1:
-            canvas.setFont("Helvetica-Bold", 7)
+            canvas.setFont(FONT_BOLD, 7)
             canvas.setFillColor(INK)
             canvas.drawString(20 * mm, 284 * mm, "AETHERDECK / " + fmt.upper())
-            canvas.setFont("Helvetica", 7)
+            canvas.setFont(FONT, 7)
             canvas.drawRightString(
-                190 * mm, 284 * mm, getattr(doc, "_current_section", "")
+                190 * mm, 284 * mm, pdf_text(getattr(doc, "_current_section", ""))
             )
             canvas.setStrokeColor(GOLD)
             canvas.line(20 * mm, 281 * mm, 190 * mm, 281 * mm)

@@ -229,6 +229,40 @@ def run_stats(db: Session, fmt: Optional[str] = None) -> List[dict]:
     return out
 
 
+def estimate(db: Session, skill: str, model_id: Optional[str], limit: int = 10) -> dict:
+    """What the next run will probably cost, from the latest real runs of the same skill.
+
+    Prefers runs of the chosen model; without them uses the other models' runs and says
+    so (token counts are similar, durations are not). Never invents a price."""
+    q = db.query(AIRun).filter(AIRun.skill_name == skill).order_by(AIRun.id.desc())
+    runs = [r for r in q.limit(200) if (r.output_json or {}).get("status") != "failed"]
+    same = [r for r in runs if model_id and r.model_id == model_id][:limit]
+    basis = same or runs[:limit]
+    if not basis:
+        return {"skill": skill, "model_id": model_id, "runs": 0}
+    metered = [r.usage_json for r in basis if r.usage_json]
+    price = model_pricing().get(model_id or "")
+    avg_in = round(sum(u.get("input", 0) for u in metered) / len(metered)) if metered else None
+    avg_out = (
+        round(sum(u.get("output", 0) + u.get("thought", 0) for u in metered) / len(metered))
+        if metered
+        else None
+    )
+    cost = run_cost({"input": avg_in, "output": avg_out}, price) if metered else None
+    return {
+        "skill": skill,
+        "model_id": model_id,
+        "runs": len(basis),
+        "same_model": bool(same),
+        "avg_duration_s": round(sum(r.duration_ms or 0 for r in basis) / len(basis) / 1000),
+        "avg_input_tokens": avg_in,
+        "avg_output_tokens": avg_out,
+        "metered_runs": len(metered),
+        "avg_cost": round(cost, 4) if cost is not None else None,
+        "currency": (price or {}).get("currency"),
+    }
+
+
 def job_stats(db: Session, fmt: Optional[str] = None) -> List[dict]:
     counts: Dict[str, Counter] = defaultdict(Counter)
     q = db.query(AIJob)

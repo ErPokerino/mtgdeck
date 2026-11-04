@@ -20,6 +20,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     AI_PROVIDER=vertex-ai \
     PORT=8080
 
+# Unicode font for the PDF guides (arrows, comparison signs); Helvetica lacks them.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install --no-cache-dir -r ./backend/requirements.txt
 

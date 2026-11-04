@@ -1,7 +1,10 @@
 """Meta-aware deck generation.
 
 1. Starting point: the consensus 75 of a meta archetype, or the user's thesis (brew)
-   with the closest consensus lists as density references.
+   with two consensus references: the closest by colours and the closest by plan.
+   The structure of every field archetype (creatures, curve, interaction, card
+   advantage) shows the model what the requested plan looks like in this format, and
+   the final list is checked against it.
 2. Expected field: archetypes weighted by observed share, with interaction profiles.
 3. AI build with full Oracle text, then deterministic checks and repairs.
 4. Deterministic analytics on the final list (sources vs requirements, odds...).
@@ -95,6 +98,8 @@ class GenerationContext:
     plan_targets: List[str]
     allowed_colors: Set[str]
     build_around: List[Card] = field(default_factory=list)
+    reference_roles: Dict[int, str] = field(default_factory=dict)  # archetype id -> why
+    structures: List[deck_engine.ArchetypeStructure] = field(default_factory=list)
 
     @property
     def mode(self) -> str:
@@ -134,28 +139,56 @@ def field_text_block(snapshot, field_model: List[deck_engine.FieldArchetype], al
 
 
 def _reference_archetypes(
-    db: Session, snapshot, colors: Set[str], category: Optional[str], n: int = 2
-) -> List[MetaArchetype]:
-    scored = []
-    for a in db.query(MetaArchetype).filter(MetaArchetype.snapshot_id == snapshot.id):
+    db: Session, snapshot, colors: Set[str], requested: Optional[str]
+) -> List[Tuple[MetaArchetype, str]]:
+    """Two references for a brew: the closest by colours (cards already tested in those
+    colours) and the closest by plan (what the requested archetype plays in this
+    format). Colours alone would hand a "control" brew the stock list of an aggro deck."""
+    archs = list(db.query(MetaArchetype).filter(MetaArchetype.snapshot_id == snapshot.id))
+    category = deck_engine.ROLE_CATEGORY.get((requested or "").lower())
+
+    def colour_score(a: MetaArchetype, weight: float) -> Optional[float]:
         a_cols = set(a.colors or [])
-        score = a.meta_share_pct
-        if colors:
-            overlap = len(a_cols & colors)
-            if not overlap:
-                continue
-            score += overlap * 30 - len(a_cols - colors) * 15
-        if category and (a.category or "").lower() == category.lower():
-            score += 20
-        scored.append((score, a))
-    scored.sort(key=lambda s: -s[0])
-    return [a for _, a in scored[:n]]
+        if not colors:
+            return a.meta_share_pct
+        overlap = len(a_cols & colors)
+        if not overlap:
+            return None
+        return a.meta_share_pct + weight * (overlap - len(a_cols - colors) / 2)
+
+    picks: List[Tuple[MetaArchetype, str]] = []
+    by_colour = sorted(
+        ((sc, a) for a in archs if (sc := colour_score(a, 30)) is not None), key=lambda x: -x[0]
+    )
+    if by_colour:
+        a = by_colour[0][1]
+        same = category and (a.category or "").lower() == category
+        picks.append((a, "per colori e piano" if same else f"per colori (piano {a.category or 'n/d'})"))
+    if category and not any((a.category or "").lower() == category for a, _ in picks):
+        same_plan = [a for a in archs if (a.category or "").lower() == category]
+        # Colour overlap still matters, but less than the share: the plan comes first.
+        scored = sorted(
+            (
+                (sc if (sc := colour_score(a, 10)) is not None else a.meta_share_pct - 10, a)
+                for a in same_plan
+            ),
+            key=lambda x: -x[0],
+        )
+        if scored:
+            picks.append((scored[0][1], f"per piano ({category})"))
+    for _, a in by_colour[1:]:
+        if len(picks) >= 2:
+            break
+        if all(a.id != p.id for p, _ in picks):
+            picks.append((a, f"per colori (piano {a.category or 'n/d'})"))
+    return picks
 
 
-def consensus_block(con: deck_engine.Consensus, with_oracle: bool) -> str:
+def consensus_block(con: deck_engine.Consensus, with_oracle: bool, role: str = "") -> str:
     a = con.archetype
     lines = [
-        f"{a.name}: quota {a.meta_share_pct}%, {con.lists_count} liste complete. "
+        f"{a.name}{f' [riferimento {role}]' if role else ''}: piano {a.category or 'n/d'}, "
+        f"quota {a.meta_share_pct}%, {con.lists_count} liste complete. "
         "Aggregazione deterministica delle liste (metodo Karsten): ogni copia entra se la giocano più liste."
     ]
     for label, cards in (("MAIN", con.main), ("SIDE", con.side)):
@@ -169,6 +202,57 @@ def consensus_block(con: deck_engine.Consensus, with_oracle: bool) -> str:
                 else f"  {info}"
             )
     return "\n".join(lines)
+
+
+def structures_block(structures: List[deck_engine.ArchetypeStructure], requested: Optional[str]) -> str:
+    if not structures:
+        return ""
+    category = deck_engine.ROLE_CATEGORY.get((requested or "").lower())
+    lines = [
+        "=== STRUTTURA DEGLI ARCHETIPI DEL CAMPO (calcolata dalle liste di consenso, solo main) ===",
+        "Creature = copie di creature; interazione = rimozioni, counter, sweeper e scarto; "
+        "vantaggio carte = carte che fanno guadagnare carte (tag Scryfall, esclusi cantrip, loot e selezione).",
+    ]
+    if category:
+        lines.append(
+            f"Archetipo richiesto: {requested}. Le liste '{category}' sotto mostrano come si gioca questo piano "
+            "nel formato: scegli consapevolmente a quale famiglia somiglia la tua (per esempio pochi bersagli e "
+            "molti counter/sweeper, oppure attrito con minacce resilienti) e dichiaralo nella strategia."
+        )
+    elif requested:
+        lines.append(
+            f"Archetipo richiesto: {requested}. Le fonti non hanno una categoria '{requested}': posiziona la lista "
+            "tra le strutture sotto e dichiara nella strategia a quali somiglia."
+        )
+    for a in structures:
+        mark = "→ " if category and a.category == category else "  "
+        lines.append(f"{mark}{a.name} ({a.category}, {a.share:g}%): {deck_engine.structure_text(a.structure)}")
+    return "\n".join(lines)
+
+
+def structure_report(
+    db: Session, entries: List[Tuple[Card, str, int]], ctx: "GenerationContext", requested: Optional[str]
+) -> Tuple[Dict[str, Any], List[str]]:
+    """The list's own structure, the field archetypes it resembles and, for a brew with
+    a requested plan, whether it is built like that plan at all."""
+    values = deck_engine.structure_profile(db, entries)
+    near = deck_engine.nearest_structures(values, ctx.structures)
+    issues = [] if ctx.consensus else deck_engine.role_issues(requested, near, ctx.structures)
+    return {
+        "values": values,
+        "nearest": [
+            {"archetype": a.name, "category": a.category, "distance": d} for a, d in near
+        ],
+        "requested": requested or "",
+    }, issues
+
+
+def structure_line(report: Dict[str, Any]) -> str:
+    near = ", ".join(f"{n['archetype']} ({n['category']})" for n in report["nearest"])
+    return (
+        f"Struttura: {deck_engine.structure_text(report['values'])}."
+        + (f" Per struttura somiglia di più a: {near}." if near else "")
+    )
 
 
 def analysis_text(analysis: dict) -> str:
@@ -190,7 +274,8 @@ def analysis_text(analysis: dict) -> str:
         f"Terre: {tapped['untapped']} stappate, {tapped['conditional']} condizionali, {tapped['tapped']} sempre tappate.\n"
         f"Interazione main: {inter(analysis['interaction_main'])}.\n"
         f"Interazione side: {inter(analysis['interaction_side'])}.\n"
-        f"Probabilità: 2-5 terre in 7 carte {odds['p_2_to_5_lands_in_7']:.0%}; "
+        f"Probabilità: 2-5 terre in 7 carte {odds['p_2_to_5_lands_in_7']:.0%} "
+        f"({odds['p_2_to_5_lands_within_one_mulligan']:.0%} entro un mulligan); "
         f"3 terre entro il turno 3 {odds['p_3_lands_by_t3_play']:.0%} on the play / {odds['p_3_lands_by_t3_draw']:.0%} on the draw."
     )
 
@@ -230,11 +315,14 @@ def build_context(db: Session, req: AIDeckGenerationRequest) -> GenerationContex
     plan_targets = [f.archetype.name for f in field_model[:PLAN_TARGETS]]
 
     references: List[deck_engine.Consensus] = []
+    reference_roles: Dict[int, str] = {}
     if snapshot and not consensus:
-        for a in _reference_archetypes(db, snapshot, allowed, req.archetype):
+        for a, role in _reference_archetypes(db, snapshot, allowed, req.archetype):
             ref = deck_engine.consensus_list(db, a)
             if ref:
                 references.append(ref)
+                reference_roles[a.id] = role
+    structures = deck_engine.field_structures(db, snapshot)
 
     stats = (
         {s.oracle_id: s for s in db.query(MetaCardStat).filter(MetaCardStat.snapshot_id == snapshot.id) if s.oracle_id}
@@ -265,13 +353,15 @@ def build_context(db: Session, req: AIDeckGenerationRequest) -> GenerationContex
         for ref in references:
             analysis = deck_engine.analyze_list(db, ref.entries())
             ref_blocks.append(
-                consensus_block(ref, with_oracle=False)
+                consensus_block(ref, with_oracle=False, role=reference_roles.get(ref.archetype.id, ""))
                 + "\n  Densità: "
                 + analysis_text(analysis).replace("\n", "\n  ")
             )
         sections.append(
             "=== PUNTO DI PARTENZA: BREW DALLA TESI DELL'UTENTE ===\n"
-            "Liste di riferimento più vicine per colori e piano (densità e carte già testate, non vincoli):\n"
+            "Liste di riferimento (densità e carte già testate, non vincoli). Un riferimento scelto solo per "
+            "colori può avere un piano diverso da quello richiesto: prendine le carte che servono al tuo piano, "
+            "non la struttura né le copie.\n"
             + ("\n\n".join(ref_blocks) if ref_blocks else "Nessuna lista di riferimento compatibile.")
         )
 
@@ -356,7 +446,8 @@ def build_context(db: Session, req: AIDeckGenerationRequest) -> GenerationContex
     opp_section = (
         "=== TESTI ORACLE DELLE CARTE CHIAVE AVVERSARIE ===\n" + "\n".join(opp_lines) if opp_lines else ""
     )
-    text = "\n\n".join(s for s in [header, field_text, opp_section, *sections] if s)
+    struct_section = structures_block(structures, None if consensus else req.archetype)
+    text = "\n\n".join(s for s in [header, field_text, struct_section, opp_section, *sections] if s)
     return GenerationContext(
         text=text,
         field_text=field_text,
@@ -367,6 +458,8 @@ def build_context(db: Session, req: AIDeckGenerationRequest) -> GenerationContex
         plan_targets=plan_targets,
         allowed_colors=allowed,
         build_around=build_cards,
+        reference_roles=reference_roles,
+        structures=structures,
     )
 
 
@@ -521,7 +614,13 @@ def _starting_point(ctx: GenerationContext) -> Dict[str, Any]:
     return {
         "mode": "brew",
         "references": [
-            {"archetype": r.archetype.name, "meta_share_pct": r.archetype.meta_share_pct, "lists_count": r.lists_count}
+            {
+                "archetype": r.archetype.name,
+                "meta_share_pct": r.archetype.meta_share_pct,
+                "lists_count": r.lists_count,
+                "category": r.archetype.category or "",
+                "role": ctx.reference_roles.get(r.archetype.id, ""),
+            }
             for r in ctx.references
         ],
     }
@@ -588,7 +687,7 @@ def run_deck_generation_skill(
             )
             try:
                 out = ask(repair_sys, prompt, AIDeckGenerationOutput)
-            except Exception as exc:  # provider failure: keep the last errors
+            except Exception as exc:  # noqa: BLE001 - provider failure: keep the last errors
                 log.warning("deck_generation repair %s failed: %s", attempt, type(exc).__name__)
                 break
             errors = hard_errors(db, fmt, out, req.build_around_cards, ctx.allowed_colors)
@@ -598,9 +697,16 @@ def run_deck_generation_skill(
     out, errors = until_valid(ask(gen_sys, base_prompt, AIDeckGenerationOutput))
     if errors:
         raise ValueError("Generazione non salvata: " + "; ".join(errors))
-    entries = resolve_entries(db, out)
-    analysis = deck_engine.analyze_list(db, entries, key_cards=req.build_around_cards)
-    issues = plan_issues(out, entries, ctx)
+    requested = None if ctx.base else req.archetype
+
+    def checks(out: AIDeckGenerationOutput):
+        entries = resolve_entries(db, out)
+        analysis = deck_engine.analyze_list(db, entries, key_cards=req.build_around_cards)
+        structure, role = structure_report(db, entries, ctx, requested)
+        analysis["structure"] = structure
+        return entries, analysis, plan_issues(out, entries, ctx) + role
+
+    entries, analysis, issues = checks(out)
 
     step("analysis")
     critic: Optional[AIDeckCriticOutput] = None
@@ -615,6 +721,9 @@ def run_deck_generation_skill(
         + _list_with_oracle(entries)
         + "\n\n=== ANALISI DETERMINISTICA (calcolata dall'app) ===\n"
         + analysis_text(analysis)
+        + "\n"
+        + structure_line(analysis["structure"])
+        + ("\n\n" + structures_block(ctx.structures, requested) if ctx.structures else "")
         + "\n\n=== VERIFICHE DETERMINISTICHE NON SUPERATE ===\n"
         + ("\n".join("- " + i for i in issues) or "nessuna")
         + "\n\n=== PROPOSTA DEL COSTRUTTORE (JSON) ===\n"
@@ -623,7 +732,7 @@ def run_deck_generation_skill(
     step("critic")
     try:
         critic = ask(critic_sys, critic_prompt, AIDeckCriticOutput)
-    except Exception as exc:  # the list is already valid: a failed review is not fatal
+    except Exception as exc:  # noqa: BLE001 - the list is already valid: a failed review is not fatal
         log.warning("deck_critic failed: %s", type(exc).__name__)
 
     revision = {"attempted": False, "applied": False, "note": ""}
@@ -647,6 +756,8 @@ def run_deck_generation_skill(
             + ("\n".join("- " + i for i in issues) or "nessuna")
             + "\n\n=== ANALISI DETERMINISTICA DELLA LISTA ATTUALE ===\n"
             + analysis_text(analysis)
+            + "\n"
+            + structure_line(analysis["structure"])
             + f"\n\n=== PROPOSTA ATTUALE (JSON) ===\n{out.model_dump_json(indent=1)}\n\n"
             + base_prompt
         )
@@ -656,11 +767,9 @@ def run_deck_generation_skill(
                 revision["note"] = "La revisione violava le regole del formato: resta la lista precedente."
             else:
                 out = revised
-                entries = resolve_entries(db, out)
-                analysis = deck_engine.analyze_list(db, entries, key_cards=req.build_around_cards)
-                issues = plan_issues(out, entries, ctx)
+                entries, analysis, issues = checks(out)
                 revision["applied"] = True
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - the previous list is valid and stays
             log.warning("deck_revision failed: %s", type(exc).__name__)
             revision["note"] = "Revisione non riuscita: resta la lista precedente."
 

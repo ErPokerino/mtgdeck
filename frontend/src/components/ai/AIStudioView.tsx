@@ -24,6 +24,7 @@ import { GuideJobStatus } from "./GuideJobStatus";
 import { GuideReader } from "../library/GuideReader";
 import { CardInfoModal } from "../common/CardInfoModal";
 import { GenerationReport } from "./GenerationReport";
+import { CostEstimate } from "./CostEstimate";
 import { AIJobStatus } from "./AIJobStatus";
 import { isActiveJob, useAIJob } from "../../hooks/useAIJob";
 
@@ -490,19 +491,27 @@ export function AIStudioView({
       </select>
     </label>
   );
-  const runButton = (loading: boolean, label: string, disabled = false) => (
-    <button
-      className="btn-primary"
-      disabled={!ready || loading || disabled}
-      type="submit"
-    >
-      {loading ? (
-        <Loader2 size={16} className="animate-spin" />
-      ) : (
-        <Sparkles size={16} />
-      )}{" "}
-      {loading ? "Analisi in corso…" : label}
-    </button>
+  const runButton = (
+    loading: boolean,
+    label: string,
+    disabled = false,
+    skill?: "deck_generation" | "deck_guide" | "matchup_spot",
+  ) => (
+    <div className="space-y-2">
+      <button
+        className="btn-primary"
+        disabled={!ready || loading || disabled}
+        type="submit"
+      >
+        {loading ? (
+          <Loader2 size={16} className="animate-spin" />
+        ) : (
+          <Sparkles size={16} />
+        )}{" "}
+        {loading ? "Analisi in corso…" : label}
+      </button>
+      {skill && !loading && <CostEstimate skill={skill} modelId={modelId} />}
+    </div>
   );
   const textSection = (title: string, text: string) =>
     text && (
@@ -783,7 +792,7 @@ export function AIStudioView({
                 placeholder="Es. Prepara una lista per un torneo con molto aggro. Motiva i flex slot e i compromessi contro control."
               />
             </label>
-            {runButton(genLoading, "Genera e salva mazzo")}
+            {runButton(genLoading, "Genera e salva mazzo", false, "deck_generation")}
             <p className="text-xs text-slate-400">
               L’analisi richiede alcuni minuti e continua sul server: puoi
               consultare altre sezioni o ricaricare la pagina. Il mazzo viene
@@ -877,6 +886,7 @@ export function AIStudioView({
               guideBusy,
               guide ? "Genera nuova versione" : "Genera e salva guida",
               guideDeck === "custom" && !customGuide.trim(),
+              "deck_guide",
             )}
           </form>
           {guideJob && (
@@ -1033,6 +1043,7 @@ export function AIStudioView({
                 (modeB === "custom" && !textB.trim()) ||
                 (modeB === "meta" && !archB) ||
                 (modeB === "saved" && !deckB),
+              "matchup_spot",
             )}
           </form>
           {matchJob && isActiveJob(matchJob) && (
