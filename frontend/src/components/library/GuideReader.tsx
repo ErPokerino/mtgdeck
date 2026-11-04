@@ -12,6 +12,34 @@ export function GuideReader({
 }) {
   const [side, setSide] = useState<"base" | "play" | "draw">("base");
   const estimate = guide.meta_estimate;
+  const plans: any[] = guide.sideboard_guide || [];
+  const swapFields = (plan: any) => {
+    const usesBase = side === "base" || plan[`on_the_${side}_uses_base`];
+    return {
+      usesBase,
+      inf: usesBase ? "cards_in" : `on_the_${side}_in`,
+      outf: usesBase ? "cards_out" : `on_the_${side}_out`,
+    };
+  };
+  // Card x matchup matrix for the selected play/draw view: +n in, -n out.
+  const matrix = new Map<string, Map<number, number>>();
+  plans.forEach((plan, i) => {
+    const { inf, outf } = swapFields(plan);
+    for (const [field, sign] of [
+      [inf, 1],
+      [outf, -1],
+    ] as const) {
+      for (const c of plan[field] || []) {
+        const row = matrix.get(c.card_name) || new Map<number, number>();
+        row.set(i, (row.get(i) || 0) + sign * c.quantity);
+        matrix.set(c.card_name, row);
+      }
+    }
+  });
+  const matrixRows = [...matrix.entries()].sort(
+    ([a, ra], [b, rb]) =>
+      Math.min(...ra.values()) - Math.min(...rb.values()) || a.localeCompare(b),
+  );
   const section = (title: string, value: string) =>
     value && (
       <section className="panel space-y-3">
@@ -65,6 +93,23 @@ export function GuideReader({
           </a>
         )}
       </div>
+      {guide.quality_review?.status === "warnings" && (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-700 bg-amber-950/40 p-4 text-sm text-amber-100"
+        >
+          <strong>Pubblicata con punti da verificare.</strong>
+          <p className="mt-1">
+            La revisione non ha potuto chiudere questi rilievi: controllali prima
+            di usare le parti interessate.
+          </p>
+          <ul className="mt-2 list-disc pl-5 space-y-1">
+            {guide.quality_review.open_issues?.map((w: string, i: number) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {guide.quality_review?.status === "passed" && (
         <p className="text-sm text-emerald-200" role="status">
           Versione salvata dopo i controlli di lista, sidate, copertura dei
@@ -78,20 +123,39 @@ export function GuideReader({
       )}
       <div className="grid md:grid-cols-3 gap-4">
         <section className="panel">
-          <p className="eyebrow">Valutazione globale</p>
-          <p className="text-3xl text-amber-200 font-bold my-3">
-            {guide.pro_score}/10
-          </p>
-          <p className="text-sm text-slate-300">{guide.pro_score_rationale}</p>
+          <p className="eyebrow">Posizione nel campo atteso</p>
+          {guide.tier_assessment ? (
+            <p className="text-sm text-slate-300 mt-3 leading-relaxed">
+              {guide.tier_assessment}
+            </p>
+          ) : (
+            <>
+              <p className="text-3xl text-amber-200 font-bold my-3">
+                {guide.pro_score ?? "—"}/10
+              </p>
+              <p className="text-sm text-slate-300">
+                {guide.pro_score_rationale}
+              </p>
+              <p className="text-xs text-slate-500 mt-2">
+                Punteggio di una versione precedente, senza evidenza misurata.
+              </p>
+            </>
+          )}
         </section>
         <section className="panel md:col-span-2">
-          <p className="eyebrow">Winrate teorico Bo3 · ponderato sul meta</p>
+          <p className="eyebrow">
+            Stima del modello Bo3 · ponderata sulle quote osservate
+          </p>
           <p className="text-3xl text-emerald-300 font-bold my-3">
             {estimate?.weighted_winrate_pct != null
               ? `${estimate.weighted_winrate_pct.toFixed(1)}%`
               : "Non disponibile"}
           </p>
-          <p className="text-sm text-slate-300">
+          <p className="text-xs text-slate-400">
+            Opinione teorica del modello, non un risultato di partite: nessuna
+            fonte pubblica dati testa a testa.
+          </p>
+          <p className="text-sm text-slate-300 mt-2">
             {estimate?.note ||
               "Versione storica senza dati di ponderazione registrati. Il valore non è ricostruibile da questa versione."}
           </p>
@@ -216,10 +280,31 @@ export function GuideReader({
               <p className="text-sm text-slate-300 mt-3 leading-relaxed">
                 {c.explanation}
               </p>
+              {c.alternatives_considered && (
+                <p className="text-sm text-slate-400 mt-2">
+                  <strong className="text-slate-300">Alternative:</strong>{" "}
+                  {c.alternatives_considered}
+                </p>
+              )}
               <div className="mt-2">{cardName(c.card_name)}</div>
             </details>
           ))}
         </section>
+        {guide.flex_slots?.length > 0 && (
+          <section className="panel">
+            <h3>Flex slot e quando cambiarli</h3>
+            <ul className="mt-3 space-y-2 text-sm text-slate-300">
+              {guide.flex_slots.map((f: any, i: number) => (
+                <li key={i}>
+                  <strong className="text-slate-100">
+                    {cardName(f.card_name)}
+                  </strong>{" "}
+                  — {f.trigger}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {guide.synergies?.map((s: any, i: number) => (
           <section className="panel" key={i}>
             <h3>{s.cards_involved?.join(" + ")}</h3>
@@ -262,22 +347,104 @@ export function GuideReader({
             ))}
           </div>
         </div>
-        {guide.sideboard_guide?.map((plan: any, i: number) => {
-          const usesBase = side === "base" || plan[`on_the_${side}_uses_base`];
-          const inf = usesBase ? "cards_in" : `on_the_${side}_in`,
-            outf = usesBase ? "cards_out" : `on_the_${side}_out`;
+        {matrixRows.length > 0 && (
+          <section className="panel">
+            <h3>Matrice di sideboard</h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Copie in entrata (+) e in uscita (−) per matchup ·{" "}
+              {side === "base"
+                ? "piano base"
+                : side === "play"
+                  ? "on the play"
+                  : "on the draw"}
+            </p>
+            <div className="overflow-x-auto mt-3">
+              <table className="data-table text-xs">
+                <thead>
+                  <tr>
+                    <th scope="col">Carta</th>
+                    {plans.map((p, i) => (
+                      <th scope="col" key={i} className="whitespace-nowrap">
+                        {p.opponent_archetype}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {matrixRows.map(([name, row]) => (
+                    <tr key={name}>
+                      <th scope="row" className="font-normal whitespace-nowrap">
+                        {cardName(name)}
+                      </th>
+                      {plans.map((_, i) => {
+                        const v = row.get(i) || 0;
+                        return (
+                          <td
+                            key={i}
+                            className={`text-center ${v > 0 ? "text-emerald-300" : v < 0 ? "text-rose-300" : "text-slate-600"}`}
+                          >
+                            {v > 0 ? `+${v}` : v < 0 ? `−${-v}` : "·"}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+        {plans.map((plan: any, i: number) => {
+          const { usesBase, inf, outf } = swapFields(plan);
           const hasPlan = plan[inf]?.length || plan[outf]?.length;
           return (
             <details className="panel" key={i} open={i === 0}>
               <summary className="cursor-pointer flex justify-between gap-3">
                 <strong>{plan.opponent_archetype}</strong>
                 <span className="text-amber-200 text-sm">
-                  {plan.expected_winrate_pct}% teorico{" "}
+                  {plan.matchup_difficulty} · {plan.expected_winrate_pct}% stimato
+                  {plan.confidence && ` · confidenza ${plan.confidence}`}{" "}
                   <ChevronDown className="inline w-4" />
                 </span>
               </summary>
               <div className="space-y-4 mt-5 text-sm leading-relaxed">
                 <p className="text-slate-400">{plan.estimate_rationale}</p>
+                {(plan.role_pre_side || plan.role_post_side) && (
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <p>
+                      <strong>Ruolo pre-side:</strong> {plan.role_pre_side}
+                    </p>
+                    <p>
+                      <strong>Ruolo post-side:</strong> {plan.role_post_side}
+                    </p>
+                  </div>
+                )}
+                {plan.opponent_key_cards?.length > 0 && (
+                  <div>
+                    <strong>Carte avversarie da rispettare</strong>
+                    <ul className="mt-2 space-y-2">
+                      {plan.opponent_key_cards.map((k: any, j: number) => (
+                        <li key={j} className="rounded-lg bg-black/20 p-3">
+                          <span className="text-slate-100">
+                            {cardName(k.card_name)}
+                          </span>
+                          <span className="block text-slate-400">
+                            {k.why_it_matters}
+                          </span>
+                          <span className="block text-sky-200">
+                            → {k.our_answer}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {plan.expected_opponent_sideboard?.length > 0 && (
+                  <p>
+                    <strong>Loro sideboard prevista:</strong>{" "}
+                    {plan.expected_opponent_sideboard.join(", ")}
+                  </p>
+                )}
                 <p>
                   <strong>Game 1:</strong> {plan.gameplan_pre_side}
                 </p>

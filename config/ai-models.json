@@ -73,6 +73,11 @@
       "tier": "simple",
       "promptVersion": "v1",
       "maxValidationRetries": 1
+    },
+    "deck_critic": {
+      "tier": "complex",
+      "promptVersion": "v1",
+      "maxValidationRetries": 1
     }
   }
 }

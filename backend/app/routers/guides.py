@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import GuideVersion, Card
-from app.services.guide_quality import reflection_copy_errors
+from app.services.guide_quality import archived_guide_warnings
 from app.services.guide_images import load_guide_images
 from app.services.guide_pdf import render_guide_pdf
 
@@ -47,7 +47,7 @@ def reviewed_guide(db, version):
         if x.get("oracle_id") in cards
     ]
     guide = dict(version.guide_json)
-    guide["rules_warnings"] = reflection_copy_errors(guide, entries)
+    guide["rules_warnings"] = archived_guide_warnings(guide, entries)
     return guide, cards
 
 

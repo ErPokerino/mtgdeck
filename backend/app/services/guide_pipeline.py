@@ -1,15 +1,26 @@
-"""One complete review, then bounded verification of changed passages. No full rewrites."""
+"""One complete review, then bounded verification of changed passages. No full rewrites.
+
+A complete draft is never thrown away: problems the review could not settle are
+published as open issues ("da verificare") instead of discarding a paid draft.
+"""
 
 import json
+import logging
 import time
 import re
 import unicodedata
 from copy import deepcopy
 
-from app.skills.schemas import AIDeckGuideOutput, GuideReviewOutput
-from app.services.guide_quality import validate_guide, validate_meta_coverage
+from pydantic import ValidationError
 
-GUIDE_BUDGET_SECONDS = 300
+from app.skills.schemas import AIDeckGuideOutput, GuideReviewOutput
+from app.services.guide_quality import (
+    validate_guide,
+    validate_meta_coverage,
+    validate_opponent_cards,
+)
+
+GUIDE_BUDGET_SECONDS = 720
 RULES_CONTEXT = """Regole di timing (CR 117, 307.1, 608; https://magic.wizards.com/en/rules):
 Normalmente una stregoneria si lancia nella propria main phase, con priorità e pila vuota.
 Un istantaneo si può lanciare quando si ha priorità, anche nel draw step dopo la pescata.
@@ -107,7 +118,9 @@ def review_guide(
     phase,
     resume_draft=None,
     max_reviews=3,
+    known_opponent_cards=None,
 ):
+    """Return (guide, open_issues)."""
     deadline = time.monotonic() + GUIDE_BUDGET_SECONDS
 
     def generate(stage, response_model, prompt, seconds, tokens, instruction):
@@ -132,7 +145,7 @@ def review_guide(
         AIDeckGuideOutput.model_validate(resume_draft)
         if resume_draft
         else generate(
-            "draft", AIDeckGuideOutput, user_prompt, 180, 20000, system_prompt
+            "draft", AIDeckGuideOutput, user_prompt, 420, 32000, system_prompt
         )
     )
     trace["draft"] = candidate.model_dump()
@@ -151,105 +164,152 @@ def review_guide(
         " Non svolgere una nuova analisi strategica, non cercare linee alternative e non ricalcolare stime: "
         "controlla solo la correttezza concreta delle azioni e delle proprietà descritte, con correzioni brevi."
     )
+    def checks(guide):
+        return (
+            validate_guide(guide, entries)
+            + validate_meta_coverage(guide, archetypes)
+            + validate_opponent_cards(
+                guide, known_opponent_cards or {}, [a.name for a in archetypes]
+            )
+        )
+
     changed = None
     pending = []
     pending_patches = None
     errors = []
-    for review_index in range(max_reviews):
-        guide = candidate.model_dump()
-        errors = validate_guide(guide, entries) + validate_meta_coverage(
-            guide, archetypes
-        )
-        trace.update(draft=guide, errors=errors, attempts=review_index + 1)
-        if pending_patches:
-            scope = "CORREZIONI PROPOSTE MA NON APPLICATE:\n" + json.dumps(
-                pending_patches, ensure_ascii=False
-            )
-            scope += "\nRipara solo le patch non applicabili: usa frammenti esatti e fonti VERBATIM dal contesto. "
-            scope += "Il testo attuale è quello originale; non riscrivere la guida. Se il rilievo è infondato ritiralo; se è reale ma non correggibile mantienilo in unresolved_issues."
-            stage, seconds = "repair_review", 35
-        elif changed is None:
-            scope = "GUIDA COMPLETA DA CONTROLLARE:\n" + candidate.model_dump_json()
-            stage, seconds = (
-                "oracle_review",
-                min(120, max(1, deadline - time.monotonic() - 35)),
-            )
-        else:
-            scope = (
-                "VERIFICA SOLO QUESTE CORREZIONI (originale, nuovo testo e motivazione):\n"
-                + json.dumps(changed, ensure_ascii=False)
-            )
-            scope += "\nNon cercare nuovi temi in altre sezioni. Verifica che il nuovo testo sia corretto, "
-            scope += "che risolva la contraddizione senza crearne altre. Se corretto restituisci patches vuoto."
-            stage, seconds = "verify_corrections", 35
-        if errors:
-            # Include only sections implicated by deterministic failures, rather than rewrite the primer.
-            scope += "\nERRORI DETERMINISTICI DA CORREGGERE:\n" + "\n".join(errors)
-            scope += "\nDATI STRUTTURATI PER LE CORREZIONI:\n" + json.dumps(
-                {
-                    k: guide[k]
-                    for k in ("card_roles", "mulligan_examples", "sideboard_guide")
-                },
-                ensure_ascii=False,
-            )
-        if pending:
-            scope += (
-                "\nDUBBI DEL PASSAGGIO PRECEDENTE DA RISOLVERE (mantienili in unresolved_issues se non risolti):\n"
-                + "\n".join(pending)
-            )
-        review = generate(
-            stage,
-            GuideReviewOutput,
-            "FONTI E LISTA:\n" + oracle + "\n" + RULES_CONTEXT + "\n" + scope,
-            seconds,
-            16000 if changed is None else 10000,
-            review_instruction,
-        )
-        trace["last_review"] = review.model_dump()
-        if not review.patches:
-            errors += review.unresolved_issues
-            if errors:
-                trace["errors"] = errors
-                raise ValueError("Guida non salvata: " + "; ".join(errors))
-            trace["attempts"] = review_index + 1
-            return candidate
-        # Every change must be followed by a verification; never publish the last unchecked patch.
-        if review_index == max_reviews - 1:
-            trace["errors"] = [
-                p.reason for p in review.patches
-            ] + review.unresolved_issues
-            raise ValueError(
-                "Guida non salvata: la bozza richiede ancora una revisione mirata."
-            )
-        try:
-            normalized_source = evidence_key(oracle + RULES_CONTEXT)
-            for patch in review.patches:
-                quote = evidence_key(patch.source_quote)
-                if (
-                    quote
-                    and (len(quote) < 8 or f" {quote} " not in f" {normalized_source} ")
-                ) or (not quote and not errors):
-                    raise ValueError(
-                        "Correzione senza evidenza verificabile nelle fonti fornite"
+    try:
+        for review_index in range(max_reviews):
+            guide = candidate.model_dump()
+            errors = checks(guide)
+            trace.update(draft=guide, errors=errors, attempts=review_index + 1)
+            if changed is None and not pending_patches:
+                scope = "GUIDA COMPLETA DA CONTROLLARE:\n" + candidate.model_dump_json()
+                stage, seconds = (
+                    "oracle_review",
+                    min(300, max(1, deadline - time.monotonic() - 90)),
+                )
+            else:
+                scope = ""
+                if changed:
+                    scope += (
+                        "VERIFICA SOLO QUESTE CORREZIONI (originale, nuovo testo e motivazione):\n"
+                        + json.dumps(changed, ensure_ascii=False)
+                        + "\nNon cercare nuovi temi in altre sezioni. Verifica che il nuovo testo sia corretto "
+                        "e che risolva la contraddizione senza crearne altre.\n"
                     )
-            candidate, changed = apply_review_patches(guide, review.patches)
-        except ValueError as exc:
-            trace["errors"] = [str(exc)]
-            pending_patches = {
-                "patches": review.model_dump(),
-                "error": str(exc),
-                "current_fields": {
-                    p.path: pointer_value(guide, p.path) for p in review.patches
-                },
-            }
+                if pending_patches:
+                    scope += (
+                        "CORREZIONI PROPOSTE MA NON APPLICATE:\n"
+                        + json.dumps(pending_patches, ensure_ascii=False)
+                        + "\nRipara solo queste patch: usa frammenti esatti del testo attuale e fonti VERBATIM dal contesto. "
+                        "Se il rilievo è infondato ritiralo; se è reale ma non correggibile mantienilo in unresolved_issues.\n"
+                    )
+                scope += "Se tutto è corretto restituisci patches vuoto."
+                stage, seconds = (
+                    "verify_corrections" if changed else "repair_review",
+                    90,
+                )
+            if errors:
+                # Include only sections implicated by deterministic failures, rather than rewrite the primer.
+                scope += "\nERRORI DETERMINISTICI DA CORREGGERE:\n" + "\n".join(errors)
+                scope += "\nDATI STRUTTURATI PER LE CORREZIONI:\n" + json.dumps(
+                    {
+                        k: guide[k]
+                        for k in ("card_roles", "mulligan_examples", "sideboard_guide")
+                    },
+                    ensure_ascii=False,
+                )
+            if pending:
+                scope += (
+                    "\nDUBBI DEL PASSAGGIO PRECEDENTE DA RISOLVERE (mantienili in unresolved_issues se non risolti):\n"
+                    + "\n".join(pending)
+                )
+            review = generate(
+                stage,
+                GuideReviewOutput,
+                "FONTI E LISTA:\n" + oracle + "\n" + RULES_CONTEXT + "\n" + scope,
+                seconds,
+                16000 if changed is None else 10000,
+                review_instruction,
+            )
+            trace["last_review"] = review.model_dump()
+            if not review.patches:
+                trace["attempts"] = review_index + 1
+                return candidate, errors + review.unresolved_issues
+            # Every change must be followed by a verification; never publish the last unchecked patch.
+            if review_index == max_reviews - 1:
+                trace["attempts"] = review_index + 1
+                return candidate, errors + [
+                    f"Correzione proposta ma non verificata: {p.reason}" for p in review.patches
+                ] + review.unresolved_issues
+            # Patches are applied one by one: a single malformed patch must not
+            # discard the valid corrections found in the same pass.
+            normalized_source = evidence_key(oracle + RULES_CONTEXT)
+            applied, failed = {}, []
+            for patch in review.patches:
+                try:
+                    quote = evidence_key(patch.source_quote)
+                    if (
+                        quote
+                        and (len(quote) < 8 or f" {quote} " not in f" {normalized_source} ")
+                    ) or (not quote and not errors):
+                        raise ValueError(
+                            "Correzione senza evidenza verificabile nelle fonti fornite"
+                        )
+                    candidate, change = apply_review_patches(
+                        candidate.model_dump(), [patch]
+                    )
+                    applied.update(change)
+                except ValueError as exc:
+                    failed.append((patch, str(exc)))
+            if failed:
+                logging.getLogger("uvicorn.error").info(
+                    "guide review: %s/%s patches not applicable (%s)",
+                    len(failed),
+                    len(review.patches),
+                    "; ".join(sorted({err for _, err in failed})),
+                )
+            pending_patches = (
+                {
+                    "patches": [patch.model_dump() for patch, _ in failed],
+                    "errors": [err for _, err in failed],
+                    "current_fields": {
+                        patch.path: pointer_value(candidate.model_dump(), patch.path)
+                        for patch, _ in failed
+                    },
+                }
+                if failed
+                else None
+            )
+            changed = applied or changed
             pending = review.unresolved_issues
-            if review_index < max_reviews - 2:
-                continue
-            raise ValueError(
-                "Guida non salvata: correzione non applicabile alla bozza conservata."
-            ) from exc
-        pending_patches = None
-        trace.update(draft=candidate.model_dump(), errors=review.unresolved_issues)
-        pending = review.unresolved_issues
-        phase("corrections_applied")
-    raise RuntimeError("Revisione non completata")
+            trace.update(
+                draft=candidate.model_dump(),
+                errors=[err for _, err in failed] + review.unresolved_issues,
+            )
+            if applied:
+                phase("corrections_applied")
+    except Exception as exc:
+        # Cancellation and "the list changed" are ValueErrors and must stop publication.
+        if isinstance(exc, ValueError) and not isinstance(exc, ValidationError):
+            raise
+        # The draft is complete: publish it with what is still unverified.
+        logging.getLogger("uvicorn.error").warning(
+            "guide review interrupted: %s", type(exc).__name__
+        )
+        reason = (
+            "tempo massimo raggiunto"
+            if isinstance(exc, TimeoutError)
+            else "risposta del revisore incompleta"
+            if isinstance(exc, ValidationError)
+            else "errore del provider"
+        )
+        unverified = [
+            f"Correzione applicata ma non verificata: {c['reason']}"
+            for c in (changed or {}).values()
+        ]
+        return candidate, checks(candidate.model_dump()) + unverified + [
+            f"Revisione non completata ({reason}): la guida va riletta con attenzione."
+        ]
+    return candidate, checks(candidate.model_dump()) + ["Revisione non completata."]
+

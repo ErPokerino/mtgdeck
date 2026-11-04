@@ -228,12 +228,18 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
             Spacer(1, 8 * mm),
         ]
     )
-    score = [
-        p("VALUTAZIONE GLOBALE", "StatLabel"),
-        p(f"{guide.get('pro_score', '-')}/10", "StatValue"),
-    ]
+    if guide.get("tier_assessment"):
+        score = [
+            p("POSIZIONE NEL CAMPO ATTESO", "StatLabel"),
+            p(guide["tier_assessment"], "SmallPro"),
+        ]
+    else:  # archived versions
+        score = [
+            p("VALUTAZIONE (VERSIONE STORICA)", "StatLabel"),
+            p(f"{guide.get('pro_score', '-')}/10", "StatValue"),
+        ]
     weighted = [
-        p("WINRATE TEORICO Bo3 / META COPERTO", "StatLabel"),
+        p("STIMA DEL MODELLO Bo3, NON DATI DI PARTITE", "StatLabel"),
         p(f"{wr:.1f}%" if wr is not None else "Non disponibile", "StatValue"),
         p(f"Copertura {estimate.get('coverage_pct', 0)}% del meta", "SmallPro"),
     ]
@@ -282,6 +288,14 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         story.append(
             p(
                 "VERSIONE STORICA CON RILIEVI DI REGOLE: consultare le note di revisione prima dell’uso.",
+                "SmallPro",
+            )
+        )
+    review = guide.get("quality_review") or {}
+    if review.get("status") == "warnings":
+        story.append(
+            p(
+                "PUBBLICATA CON PUNTI DA VERIFICARE: vedi il capitolo Piano di gioco.",
                 "SmallPro",
             )
         )
@@ -453,6 +467,11 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         )
 
     chapter("Piano di gioco")
+    if review.get("status") == "warnings":
+        section(
+            "Punti da verificare (revisione non conclusa)",
+            "\n".join(review.get("open_issues") or []),
+        )
     if guide.get("rules_warnings"):
         section(
             "Note di revisione della versione storica",
@@ -460,7 +479,8 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         )
     for title, field in [
         ("Tesi competitiva", "executive_summary"),
-        ("Valutazione globale: motivazione", "pro_score_rationale"),
+        ("Posizione nel campo atteso", "tier_assessment"),
+        ("Valutazione della versione storica", "pro_score_rationale"),
         ("Posizionamento", "meta_positioning"),
         ("Soglie del formato", "format_context_and_magic_numbers"),
         ("Manabase e probabilità", "manabase_and_probability_analysis"),
@@ -534,6 +554,8 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
             p(card.get("role_category"), "SmallPro"),
             p(card.get("explanation")),
         ]
+        if card.get("alternatives_considered"):
+            text.append(p("Alternative: " + card["alternatives_considered"], "SmallPro"))
         block = Table(
             [[art, text]],
             colWidths=widths,
@@ -560,17 +582,54 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
     section("Tips e micro-interazioni", "\n\n".join(guide.get("tips_and_tricks", [])))
     for item in guide.get("excluded_cards_and_donts", []):
         section("Esclusa: " + item.get("card_name", ""), item.get("why_excluded"))
+    if guide.get("flex_slots"):
+        section(
+            "Flex slot e quando cambiarli",
+            "\n".join(f"{f.get('card_name')}: {f.get('trigger')}" for f in guide["flex_slots"]),
+        )
+
+    plans = guide.get("sideboard_guide", [])
+    matrix = {}
+    for index, plan in enumerate(plans):
+        for field, sign in (("cards_in", 1), ("cards_out", -1)):
+            for item in plan.get(field, []):
+                row = matrix.setdefault(item["card_name"], {})
+                row[index] = row.get(index, 0) + sign * item["quantity"]
+    if matrix and plans:
+        chapter("Matrice di sideboard")
+        story.append(
+            p("Piano base: copie in entrata (+) e in uscita (-) per matchup.", "SmallPro")
+        )
+        column = max(12 * mm, (WIDTH - 48 * mm) / len(plans))
+        data_table(
+            ["Carta"] + [plan.get("opponent_archetype", "") for plan in plans],
+            [
+                [name]
+                + [
+                    (f"+{v}" if v > 0 else str(v)) if (v := row.get(i, 0)) else "."
+                    for i in range(len(plans))
+                ]
+                for name, row in sorted(
+                    matrix.items(), key=lambda kv: (min(kv[1].values()), kv[0])
+                )
+            ],
+            [48 * mm] + [column] * len(plans),
+        )
 
     for plan in guide.get("sideboard_guide", []):
         chapter("Matchup / " + plan.get("opponent_archetype", ""))
+        confidence = plan.get("confidence")
         story.append(
             p(
-                f"WR teorico Bo3: {plan.get('expected_winrate_pct')}% - {plan.get('matchup_difficulty', '')}",
+                f"{plan.get('matchup_difficulty', '')} - stima del modello Bo3 {plan.get('expected_winrate_pct')}%"
+                + (f" - confidenza {confidence}" if confidence else ""),
                 "SmallPro",
             )
         )
         for title, field in [
             ("Motivo della stima", "estimate_rationale"),
+            ("Ruolo pre-side", "role_pre_side"),
+            ("Ruolo post-side", "role_post_side"),
             ("Game 1", "gameplan_pre_side"),
             ("Game 2/3", "gameplan_post_side"),
             ("On the play", "on_the_play_notes"),
@@ -578,6 +637,20 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
             ("Mulligan target", "mulligan_target"),
         ]:
             section(title, plan.get(field))
+        if plan.get("opponent_key_cards"):
+            story.append(p("Carte avversarie da rispettare", "Heading2"))
+            data_table(
+                ["Carta", "Perché conta", "Nostra risposta"],
+                [
+                    [k.get("card_name"), k.get("why_it_matters"), k.get("our_answer")]
+                    for k in plan["opponent_key_cards"]
+                ],
+                [42 * mm, 64 * mm, 64 * mm],
+            )
+        if plan.get("expected_opponent_sideboard"):
+            section(
+                "Loro sideboard prevista", ", ".join(plan["expected_opponent_sideboard"])
+            )
         for label, inf, outf, side in [
             ("Piano base", "cards_in", "cards_out", None),
             ("On the play", "on_the_play_in", "on_the_play_out", "play"),

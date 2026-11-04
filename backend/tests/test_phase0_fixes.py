@@ -33,7 +33,7 @@ from app.services.deck_validator import (
 )
 from app.services.guide_jobs import _is_provider_failure
 from app.services.scryfall_sync import apply_set_legality
-from app.skills import runner
+from app.skills import deck_generation
 from app.skills.schemas import AIDeckCardSlot, AIDeckGenerationOutput
 
 
@@ -195,9 +195,9 @@ def test_generation_rejects_cards_outside_requested_colors(db):
         mainboard=[slot("Plains", 52), slot("White Spell", 4), slot("Red Spell", 4)],
         sideboard=[slot("Island", 15)],
     )
-    errors = runner._validate_ai_deck_against_format_rules(db, "modern", out, [], ["W"])
+    errors = deck_generation.hard_errors(db, "modern", out, [], {"W"})
     assert len(errors) == 1 and "FUORI COLORE" in errors[0] and "Red Spell" in errors[0]
-    assert not runner._validate_ai_deck_against_format_rules(db, "modern", out, ["Red Spell"], ["W"])
+    assert not deck_generation.hard_errors(db, "modern", out, ["Red Spell"], {"W", "R"})
 
 
 def test_standard_window_is_contiguous_and_excludes_future_sets():

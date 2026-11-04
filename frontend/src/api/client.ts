@@ -4,6 +4,7 @@ import type {
   Card,
   CardSearchResponse,
   DeckDetail,
+  DeckGenerationResult,
   DeckSummary,
   FormatDetail,
   FormatId,
@@ -167,10 +168,11 @@ export const api = {
     colors: string[];
     color_preset_name?: string;
     build_around_cards: string[];
+    base_archetype_id?: number;
     model_id?: string;
     save_deck?: boolean;
   }) =>
-    apiFetch<{ ai_result: any; deck: DeckDetail; meta: any }>(
+    apiFetch<DeckGenerationResult>(
       "/api/ai/generate-deck",
       {
         method: "POST",

@@ -14,6 +14,7 @@ import type {
   AppSettings,
   Card,
   DeckDetail,
+  DeckGenerationResult,
   DeckSummary,
   FormatId,
   MetaArchetypeInfo,
@@ -22,6 +23,7 @@ import { ColorBadges } from "../common/ManaCost";
 import { GuideJobStatus } from "./GuideJobStatus";
 import { GuideReader } from "../library/GuideReader";
 import { CardInfoModal } from "../common/CardInfoModal";
+import { GenerationReport } from "./GenerationReport";
 
 interface Props {
   formatId: FormatId;
@@ -65,6 +67,14 @@ const combinations: [string, string[]][] = [
   ["Temur", ["U", "R", "G"]],
   ["Domain", ["W", "U", "B", "R", "G"]],
 ];
+const archetypeOptions = [
+  "aggro",
+  "midrange",
+  "control",
+  "combo",
+  "tempo",
+  "ramp",
+];
 const date = (v: string) => new Date(v).toLocaleString("it-IT");
 export function AIStudioView({
   formatId,
@@ -87,12 +97,15 @@ export function AIStudioView({
   const [color, setColor] = useState("Dimir"),
     [customColors, setCustomColors] = useState<string[]>([]),
     [archetype, setArchetype] = useState("midrange"),
+    [baseArch, setBaseArch] = useState<number | "">(""),
     [prompt, setPrompt] = useState(""),
     [buildAround, setBuildAround] = useState<string[]>([]);
   const [query, setQuery] = useState(""),
     [suggestions, setSuggestions] = useState<Card[]>([]),
     [inspected, setInspected] = useState<Card | null>(null);
-  const [generation, setGeneration] = useState<any>(null),
+  const [generation, setGeneration] = useState<DeckGenerationResult | null>(
+      null,
+    ),
     [genLoading, setGenLoading] = useState(false),
     [genError, setGenError] = useState("");
   const [guideDeck, setGuideDeck] = useState<number | "custom">(
@@ -219,6 +232,9 @@ export function AIStudioView({
         if (!stopped) {
           setArchetypes(m.archetypes || []);
           setArchB((v) => v || m.archetypes?.[0]?.id || "");
+          setBaseArch((v) =>
+            m.archetypes?.some((a) => a.id === v) ? v : "",
+          );
         }
       })
       .catch((e) => setLoadError(e.message));
@@ -327,6 +343,7 @@ export function AIStudioView({
         colors,
         color_preset_name: color,
         build_around_cards: buildAround,
+        base_archetype_id: baseArch === "" ? undefined : baseArch,
         model_id: modelId,
         save_deck: true,
       });
@@ -561,11 +578,50 @@ export function AIStudioView({
             <div>
               <h2 className="text-xl font-bold">Progetta le tue 75</h2>
               <p className="text-sm text-slate-400 mt-2">
-                Lista da 60 main + 15 side. La legalità viene controllata sul
-                catalogo locale; una proposta non valida viene rifiutata prima
-                del salvataggio.
+                Lista da 60 main + 15 side, costruita contro il campo atteso del
+                meta. L'app calcola fonti, curva e probabilità, poi un revisore
+                cerca i punti deboli prima del salvataggio.
               </p>
             </div>
+            <label className="block text-sm">
+              Punto di partenza
+              <select
+                className="field w-full block mt-2"
+                value={baseArch}
+                onChange={(e) => {
+                  const id = e.target.value === "" ? "" : Number(e.target.value);
+                  setBaseArch(id);
+                  const arch = archetypes.find((a) => a.id === id);
+                  if (!arch) return;
+                  const preset = combinations.find(
+                    ([, cols]) =>
+                      cols.length === arch.colors.length &&
+                      cols.every((c) => arch.colors.includes(c)),
+                  );
+                  setCustomColors(arch.colors);
+                  setColor(preset?.[0] || "Personalizzato");
+                  if (archetypeOptions.includes(arch.category))
+                    setArchetype(arch.category);
+                }}
+              >
+                <option value="">Brew: parti dalla tua tesi</option>
+                {archetypes.length > 0 && (
+                  <optgroup label="Lista di consenso di un archetipo del meta">
+                    {archetypes.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} · {a.meta_share_pct}%
+                        {a.decklists_count ? ` · ${a.decklists_count} liste` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              <span className="block text-xs text-slate-400 mt-2">
+                {baseArch === ""
+                  ? "Archetipi e carte fuori meta sono ammessi: le liste più vicine servono solo come riferimento di densità, e ogni scelta viene ottimizzata contro il campo."
+                  : "Si parte dalle carte che le liste dell'archetipo hanno in comune; ogni differenza dal consenso verrà motivata contro il campo."}
+              </span>
+            </label>
             <div className="grid md:grid-cols-2 gap-4">
               <label className="text-sm">
                 Colori
@@ -587,16 +643,10 @@ export function AIStudioView({
                 <select
                   className="field w-full block mt-2"
                   value={archetype}
+                  disabled={baseArch !== ""}
                   onChange={(e) => setArchetype(e.target.value)}
                 >
-                  {[
-                    "aggro",
-                    "midrange",
-                    "control",
-                    "combo",
-                    "tempo",
-                    "ramp",
-                  ].map((a) => (
+                  {archetypeOptions.map((a) => (
                     <option key={a}>{a}</option>
                   ))}
                 </select>
@@ -732,8 +782,9 @@ export function AIStudioView({
                     {generation.ai_result.deck_name}
                   </h2>
                   <p className="text-xs text-slate-400 mt-2">
-                    {generation.meta?.model_id} ·{" "}
-                    {generation.meta?.validation_attempts} verifiche
+                    {generation.meta?.model_id} · {generation.meta?.ai_calls}{" "}
+                    chiamate AI ·{" "}
+                    {Math.round((generation.meta?.duration_ms || 0) / 1000)} s
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -760,55 +811,7 @@ export function AIStudioView({
                   </button>
                 </div>
               </div>
-              {textSection(
-                "Tesi competitiva",
-                generation.ai_result.strategy_overview,
-              )}
-              {textSection("Manabase", generation.ai_result.mana_curve_notes)}
-              {textSection(
-                "Progetto della sideboard",
-                generation.ai_result.sideboard_mapping_notes,
-              )}
-              {textSection(
-                "Sinergie",
-                generation.ai_result.key_synergies?.join("\n\n"),
-              )}
-              {textSection(
-                "Alternative escluse",
-                generation.ai_result.excluded_cards_or_traps?.join("\n\n"),
-              )}
-              <div className="grid lg:grid-cols-2 gap-4">
-                {(["mainboard", "sideboard"] as const).map((board) => (
-                  <section className="panel" key={board}>
-                    <h3 className="capitalize">
-                      {board} (
-                      {generation.ai_result[board].reduce(
-                        (n: number, c: any) => n + c.quantity,
-                        0,
-                      )}
-                      )
-                    </h3>
-                    {generation.ai_result[board].map((slot: any, i: number) => (
-                      <details
-                        className="py-3 border-b border-slate-800 text-sm"
-                        key={i}
-                      >
-                        <summary className="cursor-pointer">
-                          {slot.quantity}× {slot.card_name}{" "}
-                          <span className="text-slate-500">· {slot.role}</span>
-                        </summary>
-                        <p className="text-slate-300 mt-2">{slot.reason}</p>
-                        <button
-                          className="text-sky-200 mt-3"
-                          onClick={() => inspect(slot.card_name)}
-                        >
-                          Esamina carta
-                        </button>
-                      </details>
-                    ))}
-                  </section>
-                ))}
-              </div>
+              <GenerationReport generation={generation} onInspect={inspect} />
             </div>
           )}
         </div>

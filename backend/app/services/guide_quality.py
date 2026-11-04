@@ -35,7 +35,7 @@ def validate_swaps(plan, entries, in_field="cards_in", out_field="cards_out"):
     return errors
 
 
-def validate_guide(guide, entries, include_rules=True):
+def validate_guide(guide, entries):
     errors = []
     main = Counter()
     for card, board, qty in entries:
@@ -84,63 +84,79 @@ def validate_guide(guide, entries, include_rules=True):
                 f"{plan['opponent_archetype']}: {e}"
                 for e in validate_swaps(plan, entries, inf, outf)
             )
-    if include_rules:
-        errors.extend(reflection_copy_errors(guide, entries))
+    errors.extend(mulligan_castability_errors(guide, entries))
     return errors
 
 
-def reflection_copy_errors(guide, entries):
-    """Flag a specific, high-impact Oracle contradiction in new and archived guides."""
-    if not any("reflection of kiki-jiki" in c.name.casefold() for c, _, _ in entries):
-        return []
-    legends = []
-    for card, _, _ in entries:
-        if (
-            "legendary" in (card.type_line or "").casefold()
-            and "creature" in (card.type_line or "").casefold()
-        ):
-            front = card.name.split(" // ")[0]
-            legends.append((front, front.split(",")[0].strip().casefold()))
+def mulligan_castability_errors(guide, entries):
+    """A kept hand needs lands and at least one spell its lands can pay for.
+
+    Generic replacement for card-specific rule patches: it catches hands such as
+    "only black lands with red spells" for any deck.
+    """
+    from app.services.deck_engine import WUBRG, fetch_colors, is_land_card, land_face
+    from app.services.deck_validator import castable_with_colors
+
+    by_key = {key(c.name): c for c, board, _ in entries if board == "main"}
+    deck_lands = [(c, land_face(c)) for c in by_key.values() if land_face(c)]
     errors = []
-    sections = [
-        (str(role.get("card_name", "")), role.get("explanation", ""))
-        for role in guide.get("card_roles", [])
-    ]
-    sections += [
-        (" ".join(syn.get("cards_involved", [])), syn.get("description", ""))
-        for syn in guide.get("synergies", [])
-    ]
-    sections += [
-        ("", str(guide.get(field, "")))
-        for field in (
-            "executive_summary",
-            "early_game_plan",
-            "mid_game_plan",
-            "late_game_plan",
-        )
-    ]
-    for context, text in sections:
-        for sentence in re.split(r"[.;\n]", str(text)):
-            lower = sentence.casefold()
-            verb = re.search(r"copi(?:a|e|i|o|are|ando)|duplic(?:a|are|azione)", lower)
-            if not verb:
-                continue
-            if re.search(
-                r"(?:non|cannot|can't|impossibile|evita)\s+(?:pu[oò]\s+|di\s+)?(?:essere\s+)?(?:copi|duplic)",
-                lower,
-            ):
-                continue
-            if not any(
-                k in (context + " " + sentence).casefold()
-                for k in ("reflection", "kiki-jiki", "fable")
-            ):
-                continue
-            for full, short in legends:
-                if len(short) >= 4 and short in lower[verb.end() :]:
-                    errors.append(
-                        f"Reflection of Kiki-Jiki non può bersagliare {full}: è una creatura leggendaria. Rivedi: {sentence.strip()}"
-                    )
-    return list(dict.fromkeys(errors))
+    for ex in guide.get("mulligan_examples", []):
+        if not str(ex.get("verdict", "")).strip().upper().startswith("KEEP"):
+            continue
+        cards = [by_key.get(key(n)) for n in ex.get("hand_cards", [])]
+        if any(c is None for c in cards):
+            continue  # reported by the availability check
+        label = ", ".join(ex.get("hand_cards", []))
+        lands = [c for c in cards if land_face(c)]
+        spells = [c for c in cards if not is_land_card(c)]
+        if not lands:
+            errors.append(f"Mano tenuta senza terre ({label}): rivedi il verdetto o la mano.")
+            continue
+        if not spells:
+            errors.append(f"Mano tenuta senza magie ({label}): rivedi il verdetto o la mano.")
+            continue
+        colors = set()
+        for card in lands:
+            colors |= {c for c in card.produced_mana or [] if c in WUBRG}
+            colors |= fetch_colors(land_face(card).get("oracle_text") or "", deck_lands)
+        if not any(castable_with_colors(s, colors) for s in spells):
+            errors.append(
+                f"Mano tenuta in cui le terre ({''.join(sorted(colors)) or 'incolori'}) non lanciano nessuna magia ({label}): "
+                "rivedi il verdetto o la mano."
+            )
+    return errors
+
+
+def validate_opponent_cards(guide, known_cards, required_names):
+    """Each main matchup names >= 2 opponent cards that really appear in that archetype's lists."""
+    errors = []
+    required = {key(n) for n in required_names}
+    for i, plan in enumerate(guide.get("sideboard_guide", [])):
+        name = key(plan.get("opponent_archetype", ""))
+        cited = plan.get("opponent_key_cards") or []
+        if name in required and len(cited) < 2:
+            errors.append(
+                f"{plan['opponent_archetype']}: servono almeno 2 carte avversarie chiave con la nostra risposta (/sideboard_guide/{i}/opponent_key_cards)."
+            )
+        known = known_cards.get(name)
+        if not known:
+            continue
+        for j, item in enumerate(cited):
+            if key(item.get("card_name", "")) not in known:
+                errors.append(
+                    f"{plan['opponent_archetype']}: '{item.get('card_name')}' non compare nelle liste osservate dell'archetipo "
+                    f"(/sideboard_guide/{i}/opponent_key_cards/{j}/card_name). Cita una carta del profilo fornito."
+                )
+        for card in plan.get("expected_opponent_sideboard") or []:
+            if key(card) not in known:
+                errors.append(
+                    f"{plan['opponent_archetype']}: '{card}' non compare nelle liste osservate dell'archetipo (sideboard avversaria prevista)."
+                )
+    return errors
+
+
+# Archived guides are re-checked with the same generic rules when they are read.
+archived_guide_warnings = mulligan_castability_errors
 
 
 def weighted_meta_estimate(guide, archetypes, snapshot=None):

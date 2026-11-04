@@ -324,3 +324,132 @@ export interface FormatMetaResponse {
   >;
   top_cards: MetaTopCardInfo[];
 }
+
+/** Deterministic analytics computed by the backend on a generated list. */
+export interface ListAnalysis {
+  main_count: number;
+  side_count: number;
+  land_count: number;
+  mdfc_land_count: number;
+  avg_mana_value_nonland: number;
+  curve: Record<string, number>;
+  colors: Array<{
+    color: string;
+    sources: number;
+    required: number;
+    driver: string | null;
+    driver_turn: number | null;
+    driver_pips: number | null;
+    deficit: number;
+  }>;
+  tapped_lands: {
+    untapped: number;
+    conditional: number;
+    tapped: number;
+    always_tapped_cards: string[];
+  };
+  interaction_main: Record<string, { copies: number; cards: string[] }>;
+  interaction_side: Record<string, { copies: number; cards: string[] }>;
+  odds: {
+    lands_in_opening_7: number;
+    p_2_to_5_lands_in_7: number;
+    p_3_lands_by_t3_play: number;
+    p_3_lands_by_t3_draw: number;
+    p_4_lands_by_t4_play: number;
+    copies: Record<string, { opening_7: number; by_t3_play: number; by_t3_draw: number }>;
+  };
+  key_card_odds: Array<{ card: string; copies: number; opening_7: number; by_t3_draw: number }>;
+  notes: string[];
+}
+
+export interface GenerationSlot {
+  card_name: string;
+  quantity: number;
+  role: string;
+  reason: string;
+}
+
+export interface GenerationSwap {
+  card_name: string;
+  quantity: number;
+}
+
+export interface DeckGenerationOutput {
+  deck_name: string;
+  archetype: string;
+  color_combination_name: string;
+  base_archetype: string;
+  strategy_overview: string;
+  concessions: string;
+  mana_curve_notes: string;
+  sideboard_mapping_notes: string;
+  key_synergies: string[];
+  excluded_cards_or_traps: string[];
+  deltas: Array<{
+    card_name: string;
+    board: "main" | "side";
+    change: number;
+    reason: string;
+    matchups: string[];
+  }>;
+  matchup_plans: Array<{
+    opponent_archetype: string;
+    plan: string;
+    sideboard_in: GenerationSwap[];
+    sideboard_out: GenerationSwap[];
+  }>;
+  flex_rules: string[];
+  mainboard: GenerationSlot[];
+  sideboard: GenerationSlot[];
+}
+
+export interface DeckCritic {
+  verdict: "solida" | "da_rivedere";
+  summary: string;
+  issues: Array<{
+    severity: "alta" | "media" | "bassa";
+    area: string;
+    finding: string;
+    recommendation: string;
+  }>;
+  oracle_errors: string[];
+  swaps: Array<{
+    board: "main" | "side";
+    card_out: string;
+    card_in: string;
+    quantity: number;
+    reason: string;
+    matchups: string[];
+  }>;
+}
+
+export type GenerationStartingPoint =
+  | {
+      mode: "meta";
+      archetype: string;
+      archetype_id: number;
+      meta_share_pct: number;
+      lists_count: number;
+      main: Array<{ card_name: string; quantity: number; inclusion_pct: number; core: boolean }>;
+      side: Array<{ card_name: string; quantity: number; inclusion_pct: number }>;
+    }
+  | {
+      mode: "brew";
+      references: Array<{ archetype: string; meta_share_pct: number; lists_count: number }>;
+    };
+
+export interface DeckGenerationResult {
+  ai_result: DeckGenerationOutput;
+  deck: DeckDetail;
+  starting_point: GenerationStartingPoint;
+  analysis: ListAnalysis;
+  critic: DeckCritic | null;
+  revision: { attempted: boolean; applied: boolean; note: string };
+  warnings: string[];
+  meta: {
+    model_id: string;
+    validation_attempts: number;
+    ai_calls: number;
+    duration_ms: number;
+  };
+}

@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import AIRun, GuideJob, utcnow
 from app.services import guide_jobs
+from app.skills.deck_generation import run_deck_generation_skill
 from app.skills.runner import (
-    run_deck_generation_skill,
     run_deck_guide_skill,
     run_matchup_spot_skill,
 )

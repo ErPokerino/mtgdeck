@@ -78,7 +78,7 @@ def test_cancel_while_model_is_running_never_publishes(
     assert db.query(GuideVersion).count() == 0
 
 
-def test_timeout_keeps_draft_and_resume_skips_generation(
+def test_review_timeout_publishes_the_draft_with_open_issues(
     client, db, payload, jobs, monkeypatch, guide_data
 ):
     did = client.post("/api/decks", json=payload).json()["id"]
@@ -99,10 +99,34 @@ def test_timeout_keeps_draft_and_resume_skips_generation(
     monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
     guide_jobs._work(jid)
     db.expire_all()
-    failed = client.get(f"/api/ai/guide-jobs/{jid}").json()
-    assert failed["has_draft"] and failed["status"] == "failed"
-    assert db.query(GuideVersion).count() == 0
-    new = client.post(f"/api/ai/guide-jobs/{jid}/resume").json()["id"]
+    assert db.get(GuideJob, jid).status == "completed"
+    review = db.query(GuideVersion).one().guide_json["quality_review"]
+    assert review["status"] == "warnings"
+    assert any("Revisione non completata" in i for i in review["open_issues"])
+    assert calls == [AIDeckGuideOutput, GuideReviewOutput]
+
+
+def test_resume_from_a_saved_draft_skips_generation(
+    client, db, payload, jobs, monkeypatch, guide_data
+):
+    did = client.post("/api/decks", json=payload).json()["id"]
+    from app.services.ai_provider import get_skill_model_and_config
+
+    request = AIDeckGuideRequest(
+        deck_id=did,
+        format_id="modern",
+        model_id=get_skill_model_and_config(db, "deck_guide")["model_id"],
+    )
+    failed = GuideJob(
+        format_id="modern",
+        deck_id=did,
+        request_json=request.model_dump(),
+        status="failed",
+        draft_json=guide_data,
+    )
+    db.add(failed)
+    db.commit()
+    new = client.post(f"/api/ai/guide-jobs/{failed.id}/resume").json()["id"]
 
     class ResumeProvider:
         provider_name = "fake"
@@ -115,7 +139,6 @@ def test_timeout_keeps_draft_and_resume_skips_generation(
     guide_jobs._work(new)
     db.expire_all()
     assert db.get(GuideJob, new).status == "completed"
-    assert calls == [AIDeckGuideOutput, GuideReviewOutput]
     assert db.query(GuideVersion).count() == 1
 
 
@@ -176,7 +199,7 @@ def test_changed_deck_rejects_resume_instead_of_attaching_wrong_guide(
     assert db.query(GuideVersion).count() == 0
 
 
-def test_deadline_is_shared_across_calls_and_last_unverified_patch_is_not_saved(
+def test_deadline_is_shared_and_unverified_patches_are_flagged(
     db, guide_data, monkeypatch
 ):
     clock = [0.0]
@@ -215,9 +238,14 @@ def test_deadline_is_shared_across_calls_and_last_unverified_patch_is_not_saved(
             )
 
     monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
-    with pytest.raises(TimeoutError):
-        runner.run_deck_guide_skill(
-            db, AIDeckGuideRequest(format_id="modern", decklist_text="60 Plains")
-        )
-    assert calls == [180, 85, 35]
-    assert db.query(GuideVersion).count() == 0
+    result = runner.run_deck_guide_skill(
+        db, AIDeckGuideRequest(format_id="modern", decklist_text="60 Plains")
+    )
+    # Draft, full review, then the verification consumes the rest of the shared budget.
+    assert calls == [420, 210, 90]
+    review = result["guide"]["quality_review"]
+    assert review["status"] == "warnings"
+    assert any("applicata ma non verificata" in i for i in review["open_issues"])
+    assert result["guide"]["executive_summary"] == "Prima correzione"
+    assert db.query(GuideVersion).count() == 1
+

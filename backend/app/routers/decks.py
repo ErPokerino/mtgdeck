@@ -114,9 +114,9 @@ def _build_deck_detail(db: Session, deck: Deck) -> DeckDetailOut:
 
     guide = dict(deck.guide_json) if deck.guide_json else None
     if guide:
-        from app.services.guide_quality import reflection_copy_errors
+        from app.services.guide_quality import archived_guide_warnings
 
-        guide["rules_warnings"] = reflection_copy_errors(guide, resolved_tuples)
+        guide["rules_warnings"] = archived_guide_warnings(guide, resolved_tuples)
     return DeckDetailOut(
         id=deck.id,
         name=deck.name,

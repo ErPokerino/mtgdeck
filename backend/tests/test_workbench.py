@@ -15,7 +15,7 @@ from app.skills.schemas import (
     AIDeckGuideRequest,
     AIDeckGuideOutput,
 )
-from app.skills import runner
+from app.skills import deck_generation, runner
 from app.services.guide_pdf import render_guide_pdf
 
 
@@ -249,7 +249,7 @@ def test_lessons_and_unusual_manabase_are_not_illegal(db):
         ],
         sideboard=[dict(card_name="Island", quantity=15, role="Mana", reason="test")],
     )
-    assert runner._validate_ai_deck_against_format_rules(db, "modern", output, []) == []
+    assert deck_generation.hard_errors(db, "modern", output, []) == []
 
 
 def test_generation_never_fills_invalid_slots_or_saves(db, monkeypatch):
@@ -270,12 +270,16 @@ def test_generation_never_fills_invalid_slots_or_saves(db, monkeypatch):
         def generate_structured(self, **kwargs):
             return output
 
-    monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
+    monkeypatch.setattr(deck_generation, "get_active_ai_provider", lambda _: Provider())
     monkeypatch.setattr(
-        runner, "_get_legal_card_pool_context", lambda **kwargs: "test evidence"
+        deck_generation,
+        "build_context",
+        lambda db, req: deck_generation.GenerationContext(
+            "test evidence", "", None, None, [], [], [], set()
+        ),
     )
     with pytest.raises(ValueError, match="non salvata"):
-        runner.run_deck_generation_skill(
+        deck_generation.run_deck_generation_skill(
             db, AIDeckGenerationRequest(format_id="modern")
         )
     assert db.query(Deck).count() == 0
@@ -379,67 +383,47 @@ def test_sync_upsert_preserves_foreign_keys_and_invalidates_absent_cards(
     assert db.execute(text("PRAGMA foreign_key_check")).all() == []
 
 
-def test_reflection_cannot_copy_legendary_but_may_copy_nonlegendary(db):
+def test_kept_hands_must_be_castable_with_their_lands():
     from app.services.guide_quality import validate_guide
 
-    fable = Card(
-        oracle_id="fable",
-        name="Fable of the Mirror-Breaker // Reflection of Kiki-Jiki",
-        type_line="Enchantment // Creature",
-        scryfall_id="f",
-        set_code="tst",
-    )
-    sheoldred = Card(
-        oracle_id="sheoldred",
-        name="Sheoldred, the Apocalypse",
-        type_line="Legendary Creature - Phyrexian Praetor",
-        scryfall_id="s",
-        set_code="tst",
-    )
-    entries = [(fable, "main", 4), (sheoldred, "main", 4)]
-    guide = {
-        "card_roles": [
-            {
-                "card_name": fable.name,
-                "quantity": 4,
-                "explanation": "Una volta trasformata, copiare Sheoldred o Kroxa chiude la partita.",
-            }
-        ]
+    def card(name, type_line, **kw):
+        return Card(oracle_id=name, name=name, scryfall_id=name, set_code="tst", type_line=type_line, **kw)
+
+    swamp = card("Swamp", "Basic Land — Swamp", produced_mana=["B"], is_basic_land=True)
+    bolt = card("Bolt", "Instant", mana_cost="{R}", colors=["R"])
+    push = card("Push", "Instant", mana_cost="{B}", colors=["B"])
+    entries = [(swamp, "main", 52), (bolt, "main", 4), (push, "main", 4)]
+    hand = lambda spells: {  # noqa: E731
+        "hand_cards": ["Swamp"] * 3 + spells,
+        "verdict": "KEEP",
+        "context": "G1",
+        "analysis": "a",
     }
-    assert any("non può bersagliare" in e for e in validate_guide(guide, entries))
-    guide["card_roles"][0]["explanation"] = (
-        "Non può copiare Sheoldred, che è leggendaria."
-    )
-    assert not validate_guide(guide, entries)
+    red_only = {"mulligan_examples": [hand(["Bolt"] * 4)]}
+    assert any("non lanciano nessuna magia" in e for e in validate_guide(red_only, entries))
+    mixed = {"mulligan_examples": [hand(["Bolt", "Bolt", "Push", "Push"])]}
+    assert validate_guide(mixed, entries) == []
+    mulligan = {"mulligan_examples": [dict(hand(["Bolt"] * 4), verdict="MULLIGAN")]}
+    assert validate_guide(mulligan, entries) == []
 
 
-def test_reflection_guard_does_not_confuse_context_with_copy_target():
-    from app.services.guide_quality import reflection_copy_errors
+def test_opponent_cards_must_come_from_the_observed_lists():
+    from app.services.guide_quality import validate_opponent_cards
 
-    fable = Card(
-        oracle_id="fable",
-        name="Fable of the Mirror-Breaker // Reflection of Kiki-Jiki",
-        type_line="Enchantment // Creature",
-        scryfall_id="f",
-        set_code="tst",
-    )
-    kroxa = Card(
-        oracle_id="k",
-        name="Kroxa, Titan of Death's Hunger",
-        type_line="Legendary Creature - Elder Giant",
-        scryfall_id="k",
-        set_code="tst",
-    )
-    entries = [(fable, "main", 4), (kroxa, "main", 4)]
-    guide = {
-        "card_roles": [
-            {
-                "card_name": fable.name,
-                "explanation": "Filtre pour Kroxa, puis peut copier Harvester.",
-            }
-        ]
+    known = {"aggro": {"bolt", "goblin guide"}}
+    plan = {
+        "opponent_archetype": "Aggro",
+        "opponent_key_cards": [
+            {"card_name": "Bolt", "why_it_matters": "3 danni", "our_answer": "x"},
+            {"card_name": "Invented Card", "why_it_matters": "y", "our_answer": "z"},
+        ],
+        "expected_opponent_sideboard": ["Goblin Guide"],
     }
-    assert not reflection_copy_errors(guide, entries)
+    errors = validate_opponent_cards({"sideboard_guide": [plan]}, known, ["Aggro"])
+    assert len(errors) == 1 and "Invented Card" in errors[0]
+    plan["opponent_key_cards"] = plan["opponent_key_cards"][:1]
+    errors = validate_opponent_cards({"sideboard_guide": [plan]}, known, ["Aggro"])
+    assert any("almeno 2 carte" in e for e in errors)
 
 
 def test_pdf_embeds_hand_and_card_images(guide_data):
@@ -469,15 +453,12 @@ def test_pdf_embeds_hand_and_card_images(guide_data):
     assert any(page.get("/Resources", {}).get("/XObject") for page in reader.pages)
 
 
-def test_oracle_audit_blocks_unresolved_contradictions(
+def test_unresolved_review_issues_are_published_as_warnings(
     client, db, payload, guide_data, monkeypatch
 ):
     from app.skills.schemas import GuideReviewOutput
 
     did = client.post("/api/decks", json=payload).json()["id"]
-    previous_guide = {"executive_summary": "Versione precedente da conservare"}
-    db.get(Deck, did).guide_json = previous_guide
-    db.commit()
 
     class Provider:
         provider_name = "fake"
@@ -490,18 +471,14 @@ def test_oracle_audit_blocks_unresolved_contradictions(
             return AIDeckGuideOutput(**guide_data)
 
     monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
-    with pytest.raises(ValueError, match="Revisione Oracle"):
-        runner.run_deck_guide_skill(
-            db, AIDeckGuideRequest(deck_id=did, format_id="modern")
-        )
-    assert db.query(GuideVersion).count() == 0
-    assert db.get(Deck, did).guide_json == previous_guide
-    from app.models import AIRun
-
-    failure = db.query(AIRun).one()
-    assert failure.output_json["status"] == "failed"
-    assert "Revisione Oracle" in failure.output_json["error"]
-    assert failure.output_json["draft"] is not None
+    result = runner.run_deck_guide_skill(
+        db, AIDeckGuideRequest(deck_id=did, format_id="modern")
+    )
+    review = result["guide"]["quality_review"]
+    assert review["status"] == "warnings"
+    assert review["open_issues"] == ["Revisione Oracle: Contradiction"]
+    assert db.query(GuideVersion).count() == 1
+    assert db.get(Deck, did).guide_json["quality_review"]["status"] == "warnings"
 
 
 def test_guide_repairs_coverage_and_oracle_in_one_pass_before_saving(
@@ -554,7 +531,7 @@ def test_guide_repairs_coverage_and_oracle_in_one_pass_before_saving(
         def generate_structured(self, **kwargs):
             kind = kwargs["response_model"]
             calls.append(kind)
-            assert 0 < kwargs["timeout_seconds"] <= 180
+            assert 0 < kwargs["timeout_seconds"] <= 420
             if kind is AIDeckGuideOutput:
                 return AIDeckGuideOutput(**draft)
             assert kind is GuideReviewOutput

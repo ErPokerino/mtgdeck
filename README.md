@@ -43,9 +43,63 @@ Il catalogo viene aggiornato senza cancellare identità collegate ai mazzi. Le a
 
 Le skill motivano engine, densità, manabase, clock, interazioni Oracle, esclusioni, piani alternativi e slot post-side. Prezzo, rarità o tipo Lesson non sono filtri di legalità. Le probabilità di vedere almeno una copia in 7/9/10 carte sono calcolate con distribuzione ipergeometrica; non sono probabilità di poter lanciare la carta. Le liste invalide vengono riproposte all'AI o rifiutate, senza riempire automaticamente i buchi. Mani di esempio e sidate vengono verificate per copie disponibili e bilanciamento IN/OUT.
 
-Le guide passano **bozza → controlli deterministici → revisione con correzioni → verifica dei passaggi modificati**, prima della pubblicazione. Il revisore restituisce direttamente patch con riscontro esatto e fonte, anche per errori strutturali: non viene rigenerato l’intero primer. Sono richiesti tutti i matchup forniti, senza duplicati e con stima Bo3 motivata. Se la sidata play/draw coincide con il piano base viene dichiarato esplicitamente, evitando tabelle duplicate; se differisce, gli array devono essere completi e bilanciati.
+### Generazione dei mazzi
 
-Ogni tentativo ha un **budget di 5 minuti**, timeout per chiamata e nessun retry HTTP automatico. Massimo tre passaggi di revisione/verifica (riducibili con `deck_guide.maxValidationRetries`, mai oltre due correzioni). Il primer privilegia decisioni concrete e testo conciso; scrittura e controlli usano ragionamento medio con una revisione indipendente, evidenza Oracle e verifiche deterministiche. Solo la versione che supera i controlli viene archiviata, con data e numero di revisioni. La revisione AI riduce gli errori, ma non è una certificazione formale delle regole.
+Il meta non limita le scelte: è il campo da battere. Il punto di partenza si sceglie in AI Studio:
+- **Lista di consenso di un archetipo del meta.** L'app aggrega le liste complete dell'archetipo con il metodo di Frank Karsten: ogni copia entra se la gioca il maggior numero di liste. Le carte nell'80% delle liste o più sono il *core*, le altre i *flex*. Ogni differenza della proposta rispetto al consenso deve essere motivata: carta, copie, matchup che migliora e costo opportunità.
+- **Brew dalla tua tesi.** Archetipi, colori e build-around fuori meta sono ammessi. Le due liste di consenso più vicine servono come riferimento di densità e come fonte di carte già testate.
+
+Il modello riceve il **campo atteso**: i primi 8 archetipi pesati per quota, ciascuno con il core, l'interazione attesa per lista (calcolata con i tag funzionali di Scryfall), la curva e la sideboard probabile. Riceve anche i testi Oracle completi delle carte chiave avversarie e del pool, cioè le carte osservate nel formato e lanciabili nei colori. Sono ammesse anche carte fuori pool, purché legali. La lista di staple scritta a mano è stata eliminata.
+
+Il processo:
+1. **Generazione.**
+2. **Controlli deterministici e riparazioni** con lo stesso modello: legalità, colori, copie, 60+15, build-around.
+3. **Analisi calcolata dall'app**:
+   - fonti per colore rispetto ai requisiti della tabella di Karsten (le fetch contano solo per ciò che possono cercare nella lista);
+   - terre tappate;
+   - curva;
+   - interazione nel main e in sideboard;
+   - probabilità ipergeometriche.
+4. **Verifiche del ragionamento**: un piano di sideboard per ciascuno dei 5 archetipi principali, con IN e OUT bilanciati e disponibili, e i delta rispetto al consenso.
+5. **Revisione strategica** con un mandato diverso: cerca punti deboli contro i tier principali, slot morti, overboarding e affermazioni contraddette dai testi Oracle.
+
+Se il revisore trova problemi gravi o una verifica non è superata, il modello rivede la lista una volta sola. Una revisione che viola le regole del formato viene scartata e resta la lista precedente, già valida. Il risultato mostra:
+- punto di partenza e tabella dei delta;
+- analisi;
+- piani contro il campo;
+- regole per cambiare i flex slot;
+- esito della revisione;
+- avvisi ancora aperti.
+
+### Guide
+
+La guida riceve gli stessi fatti della generazione:
+- il campo atteso;
+- le liste di consenso complete dei primi 4 archetipi;
+- l'Oracle delle carte avversarie chiave;
+- i ruling Scryfall delle nostre carte;
+- l'analisi della lista calcolata dall'app (fonti, terre tappate, probabilità).
+
+Per ogni matchup principale indica:
+- chi è il beatdown prima e dopo la sideboard;
+- almeno 2 carte avversarie con soglie o timing e la nostra risposta;
+- la sideboard avversaria prevista;
+- le note play/draw;
+- la sidata motivata;
+- una stima Bo3 con confidenza.
+
+L'analisi approfondita di un singolo matchup resta compito dell'Analisi matchup. Al posto del punteggio numerico c'è una posizione qualitativa nel campo. La stima ponderata è un'opinione del modello, perché nessuna fonte pubblica dati testa a testa.
+
+Le guide passano **bozza → controlli deterministici → revisione con correzioni → verifica dei passaggi modificati**. I controlli deterministici verificano:
+- copie disponibili;
+- sidate bilanciate;
+- copertura dei matchup;
+- carte avversarie citate presenti nelle loro liste osservate;
+- mani tenute lanciabili con i colori delle terre in mano.
+
+Il revisore restituisce patch con riscontro esatto e fonte; ogni patch si applica da sola, quindi una malformata non scarta le altre. Il lettore e il PDF includono una matrice di sideboard carta × matchup.
+
+Ogni tentativo ha un **budget di 12 minuti**, timeout per chiamata e nessun retry HTTP automatico. Sono previsti al massimo tre passaggi di revisione o verifica, riducibili con `deck_guide.maxValidationRetries`. Una bozza completa **non viene più scartata**: se la revisione non si chiude (tempo, errore del provider, rilievi non risolti, correzioni non verificate), la guida viene pubblicata come "Pubblicata con punti da verificare", con l'elenco dei rilievi aperti nel lettore e nel PDF. La revisione AI riduce gli errori, ma non è una certificazione formale delle regole.
 
 La generazione avviene nel server come lavoro persistente (`guide_jobs`): AI Studio mostra fase reale, tempo trascorso e annullamento. Puoi cambiare sezione o ricaricare la pagina. Una bozza completa viene conservata prima della revisione; dopo un errore o riavvio puoi riprendere soltanto i controlli, senza riscriverla. Una firma della lista e del modello impedisce di pubblicare una guida su una lista modificata nel frattempo. L’annullamento impedisce la pubblicazione; una chiamata al provider già in corso può terminare prima dell’arresto del lavoro. I tentativi duplicati vengono riuniti; sono ammesse al massimo due analisi contemporanee.
 

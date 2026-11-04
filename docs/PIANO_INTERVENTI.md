@@ -180,6 +180,50 @@ Il modello riceve fatti, non deve dedurli.
 - Nessuna fonte colorata sotto il requisito calcolato, se non con una motivazione esplicita.
 - 0 statistiche inventate nel contesto passato al modello (verificato da test).
 
+### Stato Fase 2 (2026-11-04)
+
+**Nuovi moduli.**
+- **`backend/app/services/deck_engine.py`.** Contiene solo calcoli deterministici, senza AI:
+  - lista di consenso con l'aggregazione di Karsten (core al 80% delle liste o più, flex sotto); le carte bandite dopo il torneo sono escluse;
+  - modello del campo: primi 8 archetipi con core, interazione attesa per lista (dai tag Tagger), curva e sideboard probabile;
+  - analisi della lista: fonti per colore rispetto alla tabella di Karsten (fetch contate per ciò che possono cercare, MDFC incluse), terre tappate, curva, interazione nel main e in sideboard, probabilità ipergeometriche.
+- **`backend/app/skills/deck_generation.py`.** Implementa la pipeline 4.1:
+  1. contesto;
+  2. generazione;
+  3. validazione e riparazione con lo stesso modello;
+  4. analisi;
+  5. verifiche del ragionamento (delta rispetto al consenso, piani contro i primi 5 archetipi con IN e OUT bilanciati);
+  6. critico (`deck_critic.v1.md`);
+  7. una sola revisione (`deck_revision.v1.md`), solo quando servono correzioni. Una revisione che viola le regole viene scartata.
+
+**Interventi 4.3.**
+- `FORMAT_CONSTRUCTED_STAPLES` è stato eliminato: `runner.py` è passato da 1.556 a 514 righe.
+- Oracle completo, ruling per le build-around, nessun proclama nel prompt, nessuna "4x consigliata".
+- Lo schema non chiede più calcoli di Karsten al modello.
+- Le liste derivate dal meta portano il nome dell'archetipo.
+
+**Interfaccia.**
+- AI Studio ha il selettore "Punto di partenza" (brew o archetipo del meta, con colori e categoria precompilati).
+- Il report mostra delta, analisi, piani, regole per i flex slot, esito della revisione e avvisi aperti.
+
+**Test.** 13 test in `backend/tests/test_phase2_generation.py`, 92 in tutto. Uno verifica che ogni percentuale del contesto venga dai dati osservati.
+
+**Prova reale.** Pioneer, partenza dal consenso di The Rock, Gemini Argon: 3 minuti e mezzo, 3 chiamate AI.
+- Risultato: 6 delta tutti motivati, 5 piani bilanciati, fonti B 19/16 e G 16/13, nessun avviso.
+- Il critico ha trovato un problema reale: Culling Ritual distrugge le proprie Damping Sphere e The Stone Brain se entrano insieme. Lo aveva però classificato "media" e la revisione non era partita.
+- Correzione: ora anche i cambi concreti del critico avviano la revisione.
+
+**Seconda prova reale.** Brew Rakdos midrange in Pioneer con build-around Bloodtithe Harvester: 4 minuti e mezzo, 4 chiamate AI. Riferimenti di densità: Rakdos Sacrifice e Jund.
+- Il critico ha trovato un errore di regole reale: le attivazioni di Bloodtithe Harvester sono a velocità stregoneria, quindi la linea con Kiki-Jiki nella sottofase finale avversaria non esiste.
+- Ha segnalato anche due piani di sideboard deboli: tutti i Fatal Push tolti contro The Rock, Rending Volley contro creature rosse.
+- La revisione è stata applicata: Torch the Tower e Abrade nel main, Blot Out in sideboard.
+- È emerso un difetto dell'analisi, già corretto: le magie con X erano valutate con X=0 (Agadeem's Awakening chiedeva 23 fonti al turno 3). Ora si assume almeno X=1.
+
+**Resta aperto.**
+- La generazione è ancora una richiesta sincrona di alcuni minuti; il job persistente rientra in G-8.
+- Le probabilità non considerano mulligan e selezione.
+- L'interazione si basa sui tag di Scryfall, che sono ampi: per esempio "vantaggio carte" include i cantrip con corpo.
+
 ---
 
 ## 5. Fase 3 — Guide di livello professionale
@@ -246,6 +290,40 @@ Stima: 6–9 giorni. Dipende da D1, D4 e D6.
 
 - Su un set di 3 mazzi di riferimento (vedi Fase 5): 0 errori di regole tra quelli elencati in 5.2; ogni matchup principale cita almeno 2 carte avversarie con soglie o timing; play/draw differenziati dove ha senso.
 - Tasso di guide non pubblicate sotto il 10%.
+
+### Stato Fase 3 (2026-11-04)
+
+Interventi fatti:
+- **G-1 e G-2, dati.** La guida riceve:
+  - il campo atteso della Fase 2 (primi 8 archetipi con profilo di interazione, curva e sideboard probabile);
+  - le liste di consenso complete dei primi 4 archetipi;
+  - l'Oracle delle carte avversarie chiave;
+  - l'analisi della lista calcolata dall'app (fonti rispetto ai requisiti, terre tappate, probabilità).
+
+  L'analisi è anche tra le fonti del revisore, che prima scambiava per inventate le percentuali corrette.
+- **G-3, ruling.** Fino a 4 ruling Scryfall per carta. Rimossi dal prompt le regole su singole carte e il controllo `reflection_copy_errors`; le guide archiviate vengono ricontrollate con le regole generiche.
+- **G-4 e G-5, schema e profondità.** Per ogni matchup: ruolo pre e post side, almeno 2 carte avversarie con perché contano e la nostra risposta, sideboard avversaria prevista, confidenza, motivi di sidata da 8 a 20 parole. Per le carte: alternative valutate e flex slot con trigger. Mani di mulligan legate al matchup e "trap hand".
+- **G-6, valutazioni oneste.** `pro_score` sostituito da un tier qualitativo con confidenza. La stima ponderata è etichettata come opinione del modello, non come dato di partite.
+- **G-7, controlli deterministici nuovi:**
+  - carte avversarie citate presenti nelle liste osservate dell'archetipo;
+  - almeno 2 carte avversarie per ogni matchup principale;
+  - mani tenute con terre e almeno una magia lanciabile con i colori di quelle terre.
+- **G-8, niente "tutto o niente".** La guida si pubblica con gli avvisi aperti ("Pubblicata con punti da verificare", nel lettore e nel PDF) quando la revisione non si chiude: timeout, errore del provider, rilievi non risolti, correzioni non verificate. Si fermano solo l'annullamento e la lista cambiata. Le correzioni del revisore si applicano una per una: una patch malformata non scarta più le altre.
+- **G-9, prompt v7.** Formato operativo denso, densità proporzionale alla quota, esempio di forma scritto internamente, schema allineato al prompt.
+- **G-10, lettore e PDF.** Matrice di sideboard carta × matchup (base, play e draw nel lettore), carte avversarie con risposta, ruoli, alternative, flex slot, avvisi aperti.
+
+**Test.** 5 test in `backend/tests/test_phase3_guides.py`, più i test riscritti per il nuovo comportamento: 97 in tutto.
+
+**Prove reali.** The Rock in Pioneer con Gemini Argon.
+- **Prima prova:** guida pubblicata con molti avvisi. Il revisore aveva trovato errori veri, per esempio "Overgrown Tomb e Unholy Annex infliggono danni" (in realtà fanno perdere punti vita) e "Culling Ritual distrugge Leyline", ma nessuna correzione veniva applicata. Le cause erano l'analisi assente tra le fonti del revisore e l'applicazione in blocco delle patch.
+- **Seconda prova, dopo la correzione:** 4 minuti e mezzo, 7 correzioni su 8 applicate e verificate in 2 cicli, stato "passed" senza avvisi. Circa 200 parole per matchup, 2-3 carte avversarie con soglie e risposta in ognuno degli 8 matchup.
+
+Restano aperti:
+- **Play/draw.** In tutti gli 8 matchup la sidata è rimasta identica al piano base, con note tattiche diverse. Il prompt ora chiede di valutare sempre una sidata diversa contro gli archetipi veloci; l'effetto non è ancora verificato con una nuova generazione.
+- **G-6, parte non fatta.** Manca il campo per i record empirici dell'utente.
+- **G-8, parte non fatta.** Generazione del mazzo e analisi matchup non sono ancora job persistenti: restano richieste sincrone di 3-5 minuti.
+- **G-11.** Stima del costo prima dell'avvio e scelta di modelli diversi per fase.
+- **Controlli non implementati.** Danni dichiarati rispetto alla costituzione dei bersagli e conteggi delle fonti citati nel testo. Ora li copre il revisore, che ha l'analisi come fonte.
 
 ---
 
