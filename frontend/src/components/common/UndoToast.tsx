@@ -19,7 +19,7 @@ export function UndoToast({
   return (
     <div
       role="status"
-      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border border-slate-600 bg-[#172131] px-4 py-3 text-sm text-slate-100 shadow-xl max-w-[calc(100vw-2rem)]"
+      className="fixed bottom-20 lg:bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border border-slate-600 bg-[#172131] px-4 py-3 text-sm text-slate-100 shadow-xl max-w-[calc(100vw-2rem)]"
     >
       <span className="truncate">{message}</span>
       <button

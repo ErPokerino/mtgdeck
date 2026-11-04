@@ -25,7 +25,12 @@
         "gemini-api-key": "gemini-3.5-flash-lite",
         "vertex-ai": "gemini-3.5-flash-lite"
       },
-      "description": "Modello ultra-rapido e a bassa latenza per task semplici e validazione strutturata."
+      "description": "Modello ultra-rapido e a bassa latenza per task semplici e validazione strutturata.",
+      "pricing": {
+        "inputPerMillion": null,
+        "outputPerMillion": null,
+        "currency": "USD"
+      }
     },
     {
       "id": "gemini-3.8-flash",
@@ -37,7 +42,12 @@
         "gemini-api-key": "gemini-3.8-flash",
         "vertex-ai": "gemini-3.8-flash"
       },
-      "description": "Bilanciamento ottimale tra ragionamento strategico MTG e velocità di risposta."
+      "description": "Bilanciamento ottimale tra ragionamento strategico MTG e velocità di risposta.",
+      "pricing": {
+        "inputPerMillion": null,
+        "outputPerMillion": null,
+        "currency": "USD"
+      }
     },
     {
       "id": "gemini-4-argon",
@@ -50,7 +60,12 @@
         "vertex-ai": "gemini-4-argon"
       },
       "replacementNotice": "Predisposto per l'aggiornamento drop-in a Gemini Carbon modificando questo file.",
-      "description": "Massima profondità di ragionamento per deckbuilding complesso, sideboard guide e analisi matchup."
+      "description": "Massima profondità di ragionamento per deckbuilding complesso, sideboard guide e analisi matchup.",
+      "pricing": {
+        "inputPerMillion": null,
+        "outputPerMillion": null,
+        "currency": "USD"
+      }
     }
   ],
   "skills": {

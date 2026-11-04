@@ -134,17 +134,18 @@ summary:focus-visible,
   grid-row: 1;
   grid-column: 2;
 }
+/* Mobile: two rows (format + tools, then a scrolling navigation). */
 @media (max-width: 767px) {
   .workspace-header {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .workspace-header > div:last-child {
-    grid-row: 2;
-    grid-column: 1;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    gap: 6px 8px;
   }
   .workspace-header > nav {
-    grid-row: 3;
-    grid-column: 1;
+    flex-wrap: nowrap;
+  }
+  .workspace-header > nav button {
+    flex-shrink: 0;
   }
   .workspace-header > div:first-child > div.h-6 {
     display: none;

@@ -202,6 +202,8 @@ def run_deck_guide_skill(
                     model_id=trace.get("model_id", req.model_id or "unknown"),
                     provider=trace.get("provider", "unknown"),
                     format_id=trace.get("format_id", req.format_id),
+                    usage_json=dict(getattr(trace.get("provider_obj"), "usage", None) or {})
+                    or None,
                     deck_id=req.deck_id,
                     validation_attempts=trace["attempts"],
                     duration_ms=int((time.time() - started) * 1000),
@@ -232,6 +234,7 @@ def _run_deck_guide_skill(
     require_fresh_catalog(db)
     provider = get_active_ai_provider(db)
     skill_cfg = get_skill_model_and_config(db, "deck_guide", req.model_id)
+    trace["provider_obj"] = provider
     prompt_ver, sys_prompt = load_skill_prompt(
         "deck_guide", skill_cfg["prompt_version"]
     )
@@ -384,6 +387,7 @@ MATCHUP OBBLIGATORI (usa questi nomi esatti): {", ".join(a.name for a in archs) 
             provider=provider.provider_name,
             format_id=fmt,
             deck_id=deck_obj.id if deck_obj else None,
+            usage_json=dict(getattr(provider, "usage", None) or {}) or None,
             validation_attempts=attempts,
             duration_ms=duration_ms,
             input_summary={"deck_name": deck_title},
@@ -520,6 +524,7 @@ ANALISI MATCHUP SPOT TESTA A TESTA ({fmt.upper()}):
         prompt_version=prompt_ver,
         model_id=skill_cfg["model_id"],
         provider=provider.provider_name,
+        usage_json=dict(getattr(provider, "usage", None) or {}) or None,
         format_id=fmt,
         validation_attempts=1,
         duration_ms=duration_ms,

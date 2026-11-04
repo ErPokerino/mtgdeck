@@ -80,7 +80,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     <header className="workspace-header sticky top-0 z-40 min-h-15 py-2 bg-[#0C0F17]/95 backdrop-blur-md border-b border-[#1E2638] px-4 flex items-center justify-between gap-4 select-none">
       {/* Left: Brand + Global Format Selector */}
       <div className="flex flex-wrap items-center gap-3 min-w-0 max-w-full">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 max-md:hidden">
           <div className="w-8 h-8 rounded bg-gradient-to-br from-[#C8AA6E] to-[#8C6D32] flex items-center justify-center shadow-[0_0_15px_rgba(200,170,110,0.3)] border border-[#E5C98B]/40">
             <Flame className="w-4 h-4 text-[#090B10] fill-[#090B10]" />
           </div>
@@ -100,7 +100,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         {/* Browser & In-App History Navigation (Back / Forward) */}
-        <div className="flex items-center gap-1 bg-[#080A0F] p-0.5 rounded-lg border border-[#1E2638]">
+        <div className="flex items-center gap-1 bg-[#080A0F] p-0.5 rounded-lg border border-[#1E2638] max-md:hidden">
           <button
             type="button"
             onClick={onGoBack}
@@ -128,7 +128,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           data-tour="formats"
           className="flex items-center bg-[#080A0F] p-1 rounded-lg border border-[#1E2638]"
         >
-          <span className="text-[11px] font-mono-tech uppercase tracking-wider text-slate-400 px-2">
+          <span className="text-[11px] font-mono-tech uppercase tracking-wider text-slate-400 px-2 max-md:hidden">
             Formato:
           </span>
           {(["standard", "pioneer", "modern"] as FormatId[]).map((fmtId) => {
@@ -138,7 +138,8 @@ export const TopBar: React.FC<TopBarProps> = ({
               <button
                 key={fmtId}
                 onClick={() => onSelectFormat(fmtId)}
-                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                aria-pressed={active}
+                className={`px-3 max-md:px-2.5 py-1 max-md:min-h-9 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                   active
                     ? "bg-gradient-to-r from-[#C8AA6E] to-[#A8894C] text-[#090B10] shadow-sm"
                     : "text-slate-300 hover:text-white hover:bg-[#141926]"
@@ -246,11 +247,11 @@ export const TopBar: React.FC<TopBarProps> = ({
           aria-label="Aiuto e percorso iniziale"
         >
           <CircleHelp size={16} />
-          <span>Aiuto</span>
+          <span className="max-md:sr-only">Aiuto</span>
         </button>
         {/* Sync Status Pill */}
         <div
-          className="flex items-center gap-2 bg-[#10141F] border border-[#1E2638] px-2.5 py-1 rounded-lg text-xs"
+          className="flex items-center gap-2 bg-[#10141F] border border-[#1E2638] px-2.5 py-1 rounded-lg text-xs max-md:hidden"
           title={syncStatus?.scryfall_message || ""}
         >
           <Database className="w-3.5 h-3.5 text-[#C8AA6E]" />
@@ -318,8 +319,9 @@ export const TopBar: React.FC<TopBarProps> = ({
         {/* Settings Button */}
         <button
           onClick={onOpenSettings}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#141A29] hover:bg-[#1C2438] border border-[#26304A] text-xs font-medium text-slate-200 transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 max-md:min-h-10 rounded-lg bg-[#141A29] hover:bg-[#1C2438] border border-[#26304A] text-xs font-medium text-slate-200 transition-colors cursor-pointer"
           title="Impostazioni API Key Gemini, Modelli AI e Cloud Provider"
+          aria-label="Impostazioni"
         >
           <Settings className="w-3.5 h-3.5 text-[#C8AA6E]" />
           <span

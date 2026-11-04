@@ -20,6 +20,7 @@ from app.models import (
     MetaArchetype,
     QualityRating,
 )
+from app.config import settings
 from app.services import deck_engine
 from app.services.guide_quality import (
     key,
@@ -161,6 +162,26 @@ def guide_entries(db: Session, version: GuideVersion):
 # ---------------------------------------------------------------------------
 
 
+def model_pricing() -> Dict[str, dict]:
+    """Optional per-model prices from config/ai-models.json (`pricing`); never guessed."""
+    out = {}
+    for m in settings.load_ai_models_config().get("models", []):
+        price = m.get("pricing") or {}
+        if price.get("inputPerMillion") is not None and price.get("outputPerMillion") is not None:
+            out[m["id"]] = price
+    return out
+
+
+def run_cost(usage: Optional[dict], price: Optional[dict]) -> Optional[float]:
+    if not usage or not price or not (usage.get("input") or usage.get("output")):
+        return None
+    # Thinking tokens are billed as output tokens.
+    return (
+        usage.get("input", 0) * price["inputPerMillion"]
+        + (usage.get("output", 0) + usage.get("thought", 0)) * price["outputPerMillion"]
+    ) / 1_000_000
+
+
 def run_stats(db: Session, fmt: Optional[str] = None) -> List[dict]:
     """Per skill, prompt version and model: volume, failures, time and attempts."""
     groups: Dict[tuple, list] = defaultdict(list)
@@ -170,7 +191,10 @@ def run_stats(db: Session, fmt: Optional[str] = None) -> List[dict]:
     for run in q:
         groups[(run.skill_name, run.prompt_version, run.model_id)].append(run)
     out = []
+    prices = model_pricing()
     for (skill, version, model), runs in sorted(groups.items()):
+        metered = [r.usage_json for r in runs if r.usage_json]
+        costs = [c for c in (run_cost(u, prices.get(model)) for u in metered) if c is not None]
         failed = [
             r for r in runs
             if (r.output_json or {}).get("status") == "failed"
@@ -192,6 +216,13 @@ def run_stats(db: Session, fmt: Optional[str] = None) -> List[dict]:
                 "with_warnings": len(warned),
                 "avg_duration_s": round(sum(r.duration_ms or 0 for r in runs) / len(runs) / 1000, 1),
                 "avg_attempts": round(sum(r.validation_attempts or 1 for r in runs) / len(runs), 1),
+                "metered_runs": len(metered),
+                "avg_input_tokens": round(sum(u.get("input", 0) for u in metered) / len(metered)) if metered else None,
+                "avg_output_tokens": round(
+                    sum(u.get("output", 0) + u.get("thought", 0) for u in metered) / len(metered)
+                ) if metered else None,
+                "avg_cost": round(sum(costs) / len(costs), 4) if costs else None,
+                "currency": (prices.get(model) or {}).get("currency"),
                 "last_run": max(r.created_at for r in runs).isoformat() if runs else None,
             }
         )

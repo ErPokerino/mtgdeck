@@ -709,6 +709,7 @@ def run_deck_generation_skill(
             prompt_version=prompt_ver,
             model_id=model_id,
             provider=provider.provider_name,
+            usage_json=dict(getattr(provider, "usage", None) or {}) or None,
             format_id=fmt,
             deck_id=saved.id if saved else None,
             validation_attempts=calls,

@@ -90,14 +90,16 @@ export function QualityReport({ formatId }: { formatId: FormatId }) {
         </p>
         <p className="text-slate-400">
           Snapshot meta {data.snapshot.id ?? "assente"} · {data.snapshot.period ?? "periodo n/d"}.
-          Valutazioni umane come profondità / correttezza / utilità (numero di voti).
+          Valutazioni umane come profondità / correttezza / utilità (numero di voti). I token
+          sono registrati dalle esecuzioni successive a questa versione; il costo compare se
+          imposti la tariffa del modello in <code>config/ai-models.json</code>.
         </p>
       </section>
 
       <section className="panel space-y-4">
         <Table
           caption="Esecuzioni AI per versione del prompt e modello"
-          headers={["Skill", "Prompt", "Modello", "Esecuzioni", "Fallite", "Con avvisi", "Durata media", "Tentativi medi"]}
+          headers={["Skill", "Prompt", "Modello", "Esecuzioni", "Fallite", "Con avvisi", "Durata media", "Tentativi medi", "Token medi in / out", "Costo medio"]}
           rows={data.runs.map((r: any) => [
             SKILLS[r.skill] || r.skill,
             r.prompt_version,
@@ -107,6 +109,14 @@ export function QualityReport({ formatId }: { formatId: FormatId }) {
             r.with_warnings,
             `${r.avg_duration_s} s`,
             r.avg_attempts,
+            r.metered_runs
+              ? `${r.avg_input_tokens.toLocaleString("it-IT")} / ${r.avg_output_tokens.toLocaleString("it-IT")}`
+              : "non misurati",
+            r.avg_cost != null
+              ? `${r.avg_cost.toFixed(3)} ${r.currency || ""}`
+              : r.metered_runs
+                ? "tariffa non configurata"
+                : "—",
           ])}
         />
         {data.jobs.length > 0 && (

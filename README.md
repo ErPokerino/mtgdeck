@@ -33,6 +33,7 @@ Al primo avvio vengono creati database e catalogo. La sincronizzazione iniziale 
   - Guide: matchup coperti, parole e carte avversarie per matchup, errori dei validatori, avvisi aperti.
   - Esecuzioni per versione del prompt e modello, con le tue valutazioni da 1 a 5 (in fondo a ogni guida).
   - Da riga di comando: `python quality_report.py pioneer [--json]` dalla cartella `backend`.
+  - Ogni esecuzione AI registra i token del provider. Per vedere anche il costo medio imposta la tariffa del modello in `config/ai-models.json`, per esempio `"pricing": {"inputPerMillion": 1.25, "outputPerMillion": 10, "currency": "USD"}`, con i prezzi del tuo contratto. Senza tariffa il report mostra solo i token.
 - **Risultati reali**: il pulsante "Risultati" su un mazzo registra i tuoi match per archetipo avversario. La guida successiva li confronta con le stime.
 - **Mazzi e guide → Mazzi attivi**: cerca, apri, duplica, avvia il playtest, consulta le versioni o archivia una lista. Archiviare la toglie dai selettori, mantenendo dati e storico.
 - **Archiviati**: ripristina una lista oppure eliminala definitivamente dopo conferma.

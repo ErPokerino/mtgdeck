@@ -798,7 +798,29 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
   const totalPages = Math.max(1, Math.ceil(totalCards / 36));
 
   return (
-    <div className="h-[calc(100dvh-var(--header-h,3.75rem))] overflow-hidden">
+    <div className="h-[calc(100dvh-var(--header-h,3.75rem))] overflow-hidden max-lg:pb-16">
+      {/* Mobile: counter and Save always reachable, whichever tab is open. */}
+      <div
+        role="region"
+        aria-label="Stato del mazzo"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex items-center justify-between gap-3 border-t border-[#1E2638] bg-[#0E131D]/95 px-4 py-2 backdrop-blur"
+      >
+        <span className="text-sm font-mono-tech text-slate-200">
+          Main {validation.mainboard_count}/60 · Side {validation.sideboard_count}/15
+          {dirty && (
+            <span className="block text-xs text-amber-300">Modifiche non salvate</span>
+          )}
+        </span>
+        <button
+          type="button"
+          onClick={handleSaveDeck}
+          disabled={savingDeck}
+          className={`${dirty ? "btn-primary" : "btn-secondary"} min-h-11`}
+        >
+          <Save className="w-4 h-4" />
+          {savingDeck ? "Salvataggio..." : "Salva"}
+        </button>
+      </div>
       <ResizableSplitPane
         storageKey="deckbuilder_main"
         defaultLeftPct={52}
@@ -1489,6 +1511,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setGroupBy("type")}
+                    aria-pressed={groupBy === "type"}
                     className={`px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer ${
                       groupBy === "type"
                         ? "bg-[#1C2539] text-[#F3E5C8]"
@@ -1500,6 +1523,7 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setGroupBy("cmc")}
+                    aria-pressed={groupBy === "cmc"}
                     className={`px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer ${
                       groupBy === "cmc"
                         ? "bg-[#1C2539] text-[#F3E5C8]"
@@ -1512,6 +1536,8 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setViewStyle("visual")}
+                    aria-pressed={viewStyle === "visual"}
+                    aria-label="Vista grafica a pile"
                     className={`p-1 rounded cursor-pointer ${
                       viewStyle === "visual"
                         ? "bg-[#1C2539] text-[#C8AA6E]"
@@ -1524,6 +1550,8 @@ export const DeckBuilderView: React.FC<DeckBuilderViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setViewStyle("list")}
+                    aria-pressed={viewStyle === "list"}
+                    aria-label="Vista elenco compatto"
                     className={`p-1 rounded cursor-pointer ${
                       viewStyle === "list"
                         ? "bg-[#1C2539] text-[#C8AA6E]"

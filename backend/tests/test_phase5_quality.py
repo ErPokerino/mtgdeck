@@ -117,3 +117,19 @@ def test_real_results_reach_the_guide_prompt_and_go_with_the_deck(
     http.delete(f"/api/decks/{deck_id}")
     db.expire_all()
     assert db.get(Deck, deck_id) is None and db.query(MatchRecord).count() == 0
+
+
+def test_provider_usage_is_recorded_and_priced(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.services import ai_provider
+
+    provider = ai_provider.GeminiDeveloperProvider(api_key="test")
+    provider._record_usage(
+        SimpleNamespace(usage=SimpleNamespace(total_input_tokens=1000, total_output_tokens=200, total_thought_tokens=300, total_cached_tokens=0))
+    )
+    provider._record_usage(SimpleNamespace(usage=None))
+    assert provider.usage == {"calls": 2, "input": 1000, "output": 200, "thought": 300, "cached": 0}
+    price = {"inputPerMillion": 1.0, "outputPerMillion": 10.0}
+    assert quality.run_cost(provider.usage, price) == pytest.approx(0.006)
+    assert quality.run_cost(provider.usage, None) is None

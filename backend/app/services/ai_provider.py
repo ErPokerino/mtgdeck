@@ -49,6 +49,26 @@ class AIProvider(ABC):
     def get_client(self) -> genai.Client:
         pass
 
+    @property
+    def usage(self) -> Dict[str, int]:
+        """Tokens used by this provider instance (one per skill run)."""
+        if not hasattr(self, "_usage"):
+            self._usage = {"calls": 0, "input": 0, "output": 0, "thought": 0, "cached": 0}
+        return self._usage
+
+    def _record_usage(self, interaction: Any) -> None:
+        used = getattr(interaction, "usage", None)
+        self.usage["calls"] += 1
+        if used is None:
+            return
+        for field, attr in (
+            ("input", "total_input_tokens"),
+            ("output", "total_output_tokens"),
+            ("thought", "total_thought_tokens"),
+            ("cached", "total_cached_tokens"),
+        ):
+            self.usage[field] += int(getattr(used, attr, None) or 0)
+
     def resolve_provider_model_id(self, logical_model_id: str) -> str:
         cfg = settings.load_ai_models_config()
         for m in cfg.get("models", []):
@@ -102,6 +122,7 @@ class AIProvider(ABC):
                 else {}
             ),
         )
+        self._record_usage(interaction)
         raw_text = interaction.output_text
         if not raw_text:
             raise RuntimeError(

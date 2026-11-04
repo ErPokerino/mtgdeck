@@ -468,6 +468,22 @@ Restano aperti:
 - trend grafico nel tempo, oggi solo per versione;
 - un set di valutazione fisso da rigenerare a ogni cambio di prompt: oggi si misura ciò che è stato prodotto.
 
+### Dopo le fasi: punti aperti chiusi (2026-11-04)
+
+- **Token e costo (M5).** Ogni provider conta i token di ogni chiamata (`interaction.usage`: input, output, ragionamento, cache) e il run li salva in `ai_runs.usage_json`. Il report mostra token medi e costo medio. Il costo compare solo se imposti la tariffa del modello in `config/ai-models.json` (`pricing.inputPerMillion` e `outputPerMillion`): nessun prezzo è inventato. Prova reale: guida Argon con 4 chiamate, 84.434 token in input e 21.047 in output.
+- **Play/draw nelle guide (Fase 3).** Verificato con una guida reale sul brew Rakdos: contro UR Aggro e Red Deck Wins la sidata on the draw è distinta (escono 4 Thoughtseize ed entrano Pyroclasm e Blot Out). Negli altri 6 matchup resta identica al piano base. Guida pubblicata come "superata", 2 cicli di correzione.
+- **U1.** Barra fissa in basso sotto `lg` con contatore 60/15, avviso "Modifiche non salvate" e Salva, visibile in entrambe le schede del builder. Il toast "Annulla" sale sopra la barra.
+- **U4.**
+  - L'header mobile passa da 209 a 119 px su 812: due righe, con il formato e gli strumenti in alto e la navigazione scorrevole sotto.
+  - Logo, frecce di cronologia e pillola di sincronizzazione sono nascosti sotto 768 px; la sincronizzazione resta in Set & Banlist.
+  - Nessun overflow orizzontale.
+- **U2, pile visive.** La vista grafica per tipo o per curva c'era già; ora i comandi hanno `aria-pressed` e label.
+
+Restano aperti:
+- U5: revisione sistematica del glossario;
+- U8: trascinamento touch nel playtest;
+- un set di valutazione fisso da rigenerare a ogni cambio di prompt.
+
 ---
 
 ## 8. Sequenza consigliata

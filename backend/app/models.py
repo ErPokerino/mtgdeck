@@ -366,6 +366,8 @@ class AIRun(Base):
     duration_ms = Column(Integer, default=0)
     input_summary = Column(JSON, default=dict)
     output_json = Column(JSON, default=dict)
+    # Provider tokens for the whole run: {"calls", "input", "output", "thought", "cached"}.
+    usage_json = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
