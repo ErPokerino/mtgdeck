@@ -1,4 +1,5 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -6,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
-from app.config import settings
+from app.config import code_stamp, settings
 from app.database import Base, SessionLocal, engine, init_fts5_index
 from app.migrations import run_startup_repairs
 from app.models import Card, MetaSnapshot, SyncLog
@@ -25,6 +26,7 @@ from app.services.meta_scraper import run_meta_sync_all
 from app.services.scryfall_sync import ensure_default_formats, run_scryfall_sync
 
 scheduler = AsyncIOScheduler()
+CODE_STAMP = code_stamp()
 
 
 @asynccontextmanager
@@ -163,7 +165,12 @@ app.include_router(quality_router.router)
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "environment": settings.environment}
+    return {
+        "status": "ok",
+        "environment": settings.environment,
+        "code_stamp": CODE_STAMP,
+        "pid": os.getpid(),
+    }
 
 
 from fastapi.staticfiles import StaticFiles

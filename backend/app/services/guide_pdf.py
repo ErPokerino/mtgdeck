@@ -96,11 +96,22 @@ def day_label(value):
 
 
 def legality_label(legality, fmt):
-    """The app's own check, in the reader's words; None for a guide that carries none."""
+    """The outcome of the app's check, as a player reads it; None without a check."""
     if legality.get("status") != "legal":
         return None
-    checked = day_label(legality.get("checked_at"))
-    return f"Lista legale in {fmt.upper()}" + (f" · controllo automatico del {checked}" if checked else "")
+    banlist = day_label(legality.get("catalog_synced_at")) or day_label(legality.get("checked_at"))
+    return f"Lista legale in {fmt.capitalize()}" + (f" · banlist aggiornata al {banlist}" if banlist else "")
+
+
+def percent(value):
+    """16%, 12,5%: no useless decimals, Italian decimal comma."""
+    return f"{round(float(value), 1):g}%".replace(".", ",")
+
+
+def meta_source_label(estimate):
+    source = (estimate.get("source") or "").replace(" · ", ", ").replace("Last 2 Months", "ultimi 2 mesi")
+    fetched = day_label(estimate.get("fetched_at"))
+    return f"Dati del meta: {source}" + (f", rilevati il {fetched}." if fetched else ".") if source else None
 
 
 class VerticalLabel(Flowable):
@@ -348,9 +359,7 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
     }
     generated = guide.get("generated_at")
     try:
-        stamp = datetime.fromisoformat(generated.replace("Z", "+00:00")).strftime(
-            "%d/%m/%Y %H:%M UTC"
-        )
+        stamp = datetime.fromisoformat(generated.replace("Z", "+00:00")).strftime("%d/%m/%Y")
     except (AttributeError, ValueError):
         stamp = "Versione archiviata"
     estimate = guide.get("meta_estimate") or {}
@@ -359,11 +368,11 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
     legal_line = legality_label(legality, fmt)
     story.extend(
         [
-            p("AETHERDECK / COMPETITIVE PRIMER", "SmallPro"),
+            p("AETHERDECK · GUIDA COMPETITIVA", "SmallPro"),
             Spacer(1, 6 * mm),
             p(name, "TitlePro"),
             p(
-                f"{fmt.upper()} | {counts['main']} main / {counts['side']} side | {stamp}",
+                f"{fmt.capitalize()} | {counts['main']} main / {counts['side']} side | {stamp}",
                 "SmallPro",
             ),
         ]
@@ -398,7 +407,7 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
     story.append(Spacer(1, 8 * mm))
     if guide.get("tier_assessment"):
         score = [
-            p("POSIZIONE NEL CAMPO ATTESO", "StatLabel"),
+            p("POSIZIONE NEL META", "StatLabel"),
             p(guide["tier_assessment"], "SmallPro"),
         ]
     else:  # archived versions
@@ -407,9 +416,14 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
             p(f"{guide.get('pro_score', '-')}/10", "StatValue"),
         ]
     weighted = [
-        p("STIMA DEL MODELLO Bo3, NON DATI DI PARTITE", "StatLabel"),
-        p(f"{wr:.1f}%" if wr is not None else "Non disponibile", "StatValue"),
-        p(f"Copertura {estimate.get('coverage_pct', 0)}% del meta", "SmallPro"),
+        p("WINRATE STIMATO Bo3", "StatLabel"),
+        p(percent(wr) if wr is not None else "Non disponibile", "StatValue"),
+        p(
+            f"Su {percent(estimate.get('coverage_pct', 0))} del meta. Stima teorica, non risultati di partite."
+            if wr is not None
+            else estimate.get("reason") or "Dato non disponibile per questa versione.",
+            "SmallPro",
+        ),
     ]
     stats = Table(
         [[score, weighted]],
@@ -428,22 +442,27 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
     story.extend(
         [
             stats,
-            Spacer(1, 6 * mm),
-            p(
-                estimate.get("note", "Le stime AI non sono risultati di partite."),
-                "SmallPro",
-            ),
+            Spacer(1, 4 * mm),
         ]
     )
     if estimate.get("rows"):
-        story.append(p("Il campo atteso", "Heading2"))
+        story.append(p("Il meta", "Heading2"))
+        verdicts = {
+            plan.get("opponent_archetype"): plan.get("matchup_difficulty", "")
+            for plan in guide.get("sideboard_guide", [])
+        }
         data_table(
-            ["Archetipo", "Quota meta", "WR teorico Bo3"],
+            ["Archetipo", "Quota", "Winrate stimato", "Matchup"],
             [
-                [r["archetype"], f"{r['share_pct']}%", f"{r['winrate_pct']}%"]
+                [
+                    r["archetype"],
+                    percent(r["share_pct"]),
+                    percent(r["winrate_pct"]),
+                    verdicts.get(r["archetype"], ""),
+                ]
                 for r in estimate["rows"]
             ],
-            [90 * mm, 35 * mm, 45 * mm],
+            [78 * mm, 22 * mm, 35 * mm, 35 * mm],
         )
     if guide.get("rules_warnings"):
         story.append(
@@ -478,20 +497,9 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
             )
         )
 
-    source_notes = [p("FONTI", "StatLabel")]
-    if legal_line and day_label(legality.get("catalog_synced_at")):
-        source_notes.append(
-            p(f"Catalogo e banlist Scryfall aggiornati al {day_label(legality['catalog_synced_at'])}.", "SmallPro")
-        )
-    if estimate.get("source"):
-        fetched = day_label(estimate.get("fetched_at"))
-        source_notes.append(
-            p(f"Metagame: {estimate['source']}" + (f", rilevato il {fetched}." if fetched else "."), "SmallPro")
-        )
-    source_notes.append(
-        p(f"Modello: {guide.get('model_id', 'non documentato')}", "SmallPro")
-    )
-    source_notes.append(p("Immagini delle carte: Scryfall.", "SmallPro"))
+    source_notes = []
+    if meta_source_label(estimate):
+        source_notes.append(p(meta_source_label(estimate), "SmallPro"))
     if estimate.get("missing_archetypes"):
         source_notes.append(
             p(
@@ -499,17 +507,14 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
                 "SmallPro",
             )
         )
-    story.extend([Spacer(1, 4 * mm), KeepTogether(source_notes)])
+    if source_notes:
+        story.extend([Spacer(1, 3 * mm), KeepTogether(source_notes)])
 
     story.extend(
         [
             PageBreak(),
-            p("Dentro la guida", "Heading1"),
-            p(
-                "Lista illustrata, mani di esempio, scelte tecniche e piani per ogni avversario.",
-                "SmallPro",
-            ),
-            Spacer(1, 7 * mm),
+            p("Indice", "Heading1"),
+            Spacer(1, 4 * mm),
         ]
     )
     toc = TableOfContents()
@@ -591,11 +596,7 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         if not entries:
             continue
         heading = [
-            p(f"{label} / vista carte", "CardTitle"),
-            p(
-                f"{counts[board]} carte - quantità indicate su ogni figurina",
-                "SmallPro",
-            ),
+            p(f"{label} in immagini", "CardTitle"),
         ]
         rows = [[heading, "", "", "", ""]]
         for start in range(0, len(entries), 5):
@@ -638,8 +639,8 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
             "\n".join(guide["rules_warnings"]),
         )
     for title, field in [
-        ("Tesi competitiva", "executive_summary"),
-        ("Posizione nel campo atteso", "tier_assessment"),
+        ("Il piano del mazzo", "executive_summary"),
+        ("Posizione nel meta", "tier_assessment"),
         ("Valutazione della versione storica", "pro_score_rationale"),
         ("Posizionamento", "meta_positioning"),
         ("Soglie del formato", "format_context_and_magic_numbers"),
@@ -680,12 +681,6 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         )
 
     chapter("Scelte carta per carta")
-    story.append(
-        p(
-            "Copie, ruolo e decisioni di sequenziamento. Le carte a doppia faccia sono mostrate da entrambi i lati quando disponibili.",
-            "SmallPro",
-        )
-    )
     for card in guide.get("card_roles", []):
         card_name = card.get("card_name", "")
         has_back = bool(card_images.get(image_key(card_name) + "::back"))
@@ -769,8 +764,17 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         confidence = plan.get("confidence")
         story.append(
             p(
-                f"{plan.get('matchup_difficulty', '')} - stima del modello Bo3 {plan.get('expected_winrate_pct')}%"
-                + (f" - confidenza {confidence}" if confidence else ""),
+                " · ".join(
+                    part
+                    for part in (
+                        plan.get("matchup_difficulty", ""),
+                        f"winrate stimato Bo3 {percent(plan['expected_winrate_pct'])}"
+                        if plan.get("expected_winrate_pct") is not None
+                        else "",
+                        f"confidenza {confidence}" if confidence else "",
+                    )
+                    if part
+                ),
                 "SmallPro",
             )
         )
@@ -833,13 +837,11 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         canvas.drawString(
             20 * mm,
             12 * mm,
-            "AETHERDECK / "
+            "AETHERDECK · "
             + (
-                pdf_text(legal_line)
-                if legal_line
-                else f"Lista non legale in {fmt.upper()}: vedi la prima pagina"
+                f"Lista non legale in {fmt.capitalize()}: vedi la prima pagina"
                 if legality.get("status") == "not_legal"
-                else fmt.upper()
+                else pdf_text(name)
             ),
         )
         canvas.drawRightString(190 * mm, 12 * mm, str(doc.page))
@@ -871,7 +873,7 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
                 anchor = f"section-{self._heading_count}"
                 self.canv.bookmarkPage(anchor)
                 self.canv.addOutlineEntry(title, anchor, level=0)
-                if title != "Dentro la guida":
+                if title != "Indice":
                     self.notify("TOCEntry", (0, escape(title), self.page, anchor))
 
     doc = PrimerDoc(

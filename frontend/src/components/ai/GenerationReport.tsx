@@ -104,7 +104,7 @@ function AnalysisPanel({ a }: { a: ListAnalysis }) {
       <div>
         <h3>Analisi della lista</h3>
         <p className="text-xs text-slate-400 mt-1">
-          Calcolata dall'app sulla lista finale, non dal modello.
+          Calcolata sulla lista finale.
         </p>
       </div>
       <div className="grid sm:grid-cols-3 gap-4 text-sm">
@@ -368,7 +368,7 @@ export function GenerationReport({
 
       {out.matchup_plans.length > 0 && (
         <section className="panel">
-          <h3>Piani contro il campo</h3>
+          <h3>Piani contro il meta</h3>
           <div className="mt-3 divide-y divide-slate-800">
             {out.matchup_plans.map((p) => (
               <details key={p.opponent_archetype} className="py-3">

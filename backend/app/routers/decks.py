@@ -114,8 +114,13 @@ def _build_deck_detail(db: Session, deck: Deck) -> DeckDetailOut:
 
     guide = dict(deck.guide_json) if deck.guide_json else None
     if guide:
-        from app.services.guide_quality import archived_guide_warnings, legality_report
+        from app.services.guide_quality import (
+            archived_guide_warnings,
+            legality_report,
+            polish_guide_text,
+        )
 
+        guide = polish_guide_text(guide)
         guide["rules_warnings"] = archived_guide_warnings(guide, resolved_tuples)
         guide["legality"] = legality_report(db, deck.format_id, resolved_tuples)
     return DeckDetailOut(

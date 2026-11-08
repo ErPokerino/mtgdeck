@@ -32,7 +32,7 @@ class AIDeckDelta(BaseModel):
         description="Quale matchup migliora, contro quali carte avversarie e quale costo opportunità accetti"
     )
     matchups: List[str] = Field(
-        default_factory=list, description="Archetipi del campo interessati, con il nome esatto fornito"
+        default_factory=list, description="Archetipi del meta interessati, con il nome esatto fornito"
     )
 
 
@@ -42,7 +42,7 @@ class AIGenerationSwap(BaseModel):
 
 
 class AIGenerationMatchupPlan(BaseModel):
-    opponent_archetype: str = Field(description="Nome esatto dell'archetipo del campo atteso")
+    opponent_archetype: str = Field(description="Nome esatto dell'archetipo del meta")
     plan: str = Field(
         description="Chi è il beatdown, cosa conta nel matchup, come vincono loro e come vinciamo noi, carte avversarie da rispettare"
     )
@@ -65,11 +65,11 @@ class AIDeckGenerationOutput(BaseModel):
         description="Nome esatto dell'archetipo del meta da cui parte la lista; stringa vuota se è un brew",
     )
     strategy_overview: str = Field(
-        description="Tesi competitiva: contro quali archetipi del campo è costruita la lista, piano A e piano B, turni critici, condizioni in cui la tesi fallisce"
+        description="Tesi competitiva: contro quali archetipi del meta è costruita la lista, piano A e piano B, turni critici, condizioni in cui la tesi fallisce"
     )
     concessions: str = Field(
         default="",
-        description="Matchup e situazioni concessi consapevolmente e perché il compromesso conviene nel campo atteso",
+        description="Matchup e situazioni concessi consapevolmente e perché il compromesso conviene nel meta",
     )
     mana_curve_notes: str = Field(
         description="Ragionamento su numero di terre, fonti per colore rispetto ai requisiti forniti, terre che entrano tappate e curva; nessuna percentuale non fornita dal contesto"
@@ -83,7 +83,7 @@ class AIDeckGenerationOutput(BaseModel):
     )
     excluded_cards_or_traps: List[str] = Field(
         default_factory=list,
-        description="3-5 carte popolari o plausibili escluse deliberatamente, con il motivo nel campo atteso",
+        description="3-5 carte popolari o plausibili escluse deliberatamente, con il motivo nel meta",
     )
     deltas: List[AIDeckDelta] = Field(
         default_factory=list,
@@ -91,7 +91,7 @@ class AIDeckGenerationOutput(BaseModel):
     )
     matchup_plans: List[AIGenerationMatchupPlan] = Field(
         default_factory=list,
-        description="Un piano per ciascuno degli archetipi principali del campo indicati nel contesto, con IN dalla sideboard e OUT dal main bilanciati",
+        description="Un piano per ciascuno degli archetipi principali del meta indicati nel contesto, con IN dalla sideboard e OUT dal main bilanciati",
     )
     flex_rules: List[str] = Field(
         default_factory=list,
@@ -123,14 +123,14 @@ class AICriticSwap(BaseModel):
 
 class AIDeckCriticOutput(BaseModel):
     verdict: Literal["solida", "da_rivedere"]
-    summary: str = Field(description="Giudizio sintetico sulla lista contro il campo atteso")
+    summary: str = Field(description="Giudizio sintetico sulla lista contro il meta")
     issues: List[AICriticIssue] = Field(default_factory=list)
     oracle_errors: List[str] = Field(
         default_factory=list,
         description="Affermazioni della proposta contraddette dal testo Oracle fornito, citando carta e frase",
     )
     swaps: List[AICriticSwap] = Field(
-        default_factory=list, description="Cambi raccomandati, solo se motivati contro il campo"
+        default_factory=list, description="Cambi raccomandati, solo se motivati contro il meta"
     )
 
 
@@ -154,14 +154,14 @@ class CardRoleExplanation(BaseModel):
     card_name: str
     quantity: int = Field(ge=1, le=250)
     role_category: str = Field(
-        description="Core Engine | Primary Threat | Interaction/Removal | Flex Slot | Manabase | Sideboard Tech"
+        description="Minaccia principale | Motore | Interazione | Flex slot | Manabase | Tech di sideboard"
     )
     explanation: str = Field(
-        description="Perché esattamente questo numero di copie nel campo atteso, come sequenziarla, interazioni di regole e quando tagliarla post-side"
+        description="Perché esattamente questo numero di copie nel meta, come sequenziarla, interazioni di regole e quando tagliarla post-side"
     )
     alternatives_considered: str = Field(
         default="",
-        description="Alternative concrete per lo stesso slot (nomi di carte) e perché questa è preferita nel campo atteso",
+        description="Alternative concrete per lo stesso slot (nomi di carte) e perché questa è preferita nel meta",
     )
 
 
@@ -283,7 +283,7 @@ class AIDeckGuideOutput(BaseModel):
     )
     tier_assessment: str = Field(
         default="",
-        description="Posizione qualitativa nel campo atteso (es. 'scelta solida contro un campo aggressivo') con confidenza e motivo; nessun punteggio numerico",
+        description="Posizione qualitativa nel meta (es. 'scelta solida contro un meta aggressivo') con confidenza e motivo; nessun punteggio numerico",
     )
     meta_positioning: str = Field(
         description="Posizionamento nel metagame attuale: quali archetipi prediamo, quali soffriamo e perché"
@@ -470,7 +470,7 @@ class AIDeckSwapSuggestion(BaseModel):
         description="Ruolo funzionale dello slot (es. 'Rimozione a costo 1', 'Fonte doppia stappata', 'Hate Cimitero')"
     )
     reason_out: str = Field(
-        description="Perché tagliare queste copie di card_out (es. ridondante, troppo lenta contro il campo atteso, mana-inefficiente)"
+        description="Perché tagliare queste copie di card_out (es. ridondante, troppo lenta contro il meta, mana-inefficiente)"
     )
     reason_in: str = Field(
         description="Perché inserire card_in al suo posto (sinergia, efficienza, soglie del formato)"

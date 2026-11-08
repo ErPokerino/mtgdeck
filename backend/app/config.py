@@ -9,6 +9,16 @@ CONFIG_DIR = ROOT_DIR / "config"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def code_stamp() -> int:
+    """Newest change to the code a server runs: lets the launcher spot a stale server."""
+    newest = 0.0
+    for root in (ROOT_DIR / "backend", CONFIG_DIR):
+        for path in root.rglob("*"):
+            if path.suffix in (".py", ".md", ".json") and not {"tests", "__pycache__"} & set(path.parts):
+                newest = max(newest, path.stat().st_mtime)
+    return int(newest)
+
+
 class Settings(BaseSettings):
     """Configurazione applicazione (Fase 1 Locale -> Fase 2 GCP Vertex AI)."""
 

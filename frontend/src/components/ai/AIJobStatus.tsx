@@ -4,7 +4,7 @@ import type { AIJob } from "../../types";
 
 const PHASES: Record<AIJob["kind"], [string, string][]> = {
   deck_generation: [
-    ["context", "Preparazione del campo atteso"],
+    ["context", "Preparazione del meta"],
     ["generation", "Costruzione della lista"],
     ["repair", "Correzione delle regole del formato"],
     ["analysis", "Analisi della lista"],

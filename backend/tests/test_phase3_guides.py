@@ -60,7 +60,7 @@ def test_guide_receives_field_rulings_and_computed_facts(db, meta, guide_data, m
     guide["sideboard_guide"] = [plan("Mono Red", ["Bolt", "Smash"]), plan("Green Stompy", ["Grizzly", "Grizzly"])]
     result, prompts = run_guide(db, monkeypatch, guide)
     draft_prompt = prompts[0]
-    assert "CAMPO ATTESO" in draft_prompt and "Bolt ruling text." in draft_prompt
+    assert "META ATTESO" in draft_prompt and "Bolt ruling text." in draft_prompt
     assert "Fonti per colore: R 56 fonti / 14 richieste" in draft_prompt
     assert "MATCHUP OBBLIGATORI (usa questi nomi esatti): Mono Red, Green Stompy" in draft_prompt
     assert "Creature — Bear" in draft_prompt  # Oracle of the opponents' key cards

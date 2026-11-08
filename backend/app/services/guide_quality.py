@@ -28,6 +28,73 @@ def key(name):
     return re.sub(r"\s+", " ", name.split(" // ")[0].strip().casefold())
 
 
+# "campo" as a calque of "field". Battlefield uses ("in campo", "sul campo", "campo di
+# battaglia", "controllo del campo") are left alone on purpose.
+_CAMPO = r"campo\b(?! di battaglia)"
+TERM_FIXES = [
+    (re.compile(r"\b(il|del|nel|al|dal|un|sul) campo atteso\b", re.I), r"\1 meta"),
+    (re.compile(r"\bcampo atteso\b"), "meta"),
+    (re.compile(r"\bCampo atteso\b"), "Meta"),
+    (re.compile(rf"(\d\s*%(?:\s+\w+)?\s+del)\s+{_CAMPO}", re.I), r"\1 meta"),
+    (
+        re.compile(
+            rf"\b(archetipi|mazzi|tier|quota|resto|metà|terzo|quarto|parte|maggioranza)((?:\s+\w+)?\s+del)\s+{_CAMPO}",
+            re.I,
+        ),
+        r"\1\2 meta",
+    ),
+    (re.compile(rf"\bcontro (il|un|questo) {_CAMPO}", re.I), r"contro \1 meta"),
+    (re.compile(rf"\bnel {_CAMPO}", re.I), "nel meta"),
+    (re.compile(r"\bun campo (aggressivo|lento|veloce|dominato|ostile|di creature)\b", re.I), r"un meta \1"),
+    (re.compile(r"(\d+)\.0%"), r"\1%"),
+    (re.compile(r"\bAttention:"), "Attenzione:"),
+]
+ROLE_LABELS = {
+    "core engine": "Motore",
+    "primary threat": "Minaccia principale",
+    "interaction/removal": "Interazione",
+    "flex slot": "Flex slot",
+    "manabase": "Manabase",
+    "sideboard tech": "Tech di sideboard",
+}
+TURN_PREFIX = re.compile(r"^\s*Turni?\s+\d+\s*(?:[-–]\s*\d+|\+)?\s*:\s*")
+
+
+def polish_text(text):
+    for pattern, replacement in TERM_FIXES:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+def _polish_node(node):
+    if isinstance(node, str):
+        return polish_text(node)
+    if isinstance(node, list):
+        return [_polish_node(item) for item in node]
+    if isinstance(node, dict):
+        return {k: _polish_node(v) for k, v in node.items()}
+    return node
+
+
+def polish_guide_text(guide):
+    """The words a player reads, for new guides and for those already archived."""
+    polished = {k: v if k in _NOT_PROSE else _polish_node(v) for k, v in guide.items()}
+    for role in polished.get("card_roles") or []:
+        label = str(role.get("role_category", "")).strip().casefold()
+        role["role_category"] = ROLE_LABELS.get(label, role.get("role_category"))
+    for field in ("early_game_plan", "mid_game_plan", "late_game_plan"):
+        text = polished.get(field)
+        if isinstance(text, str) and TURN_PREFIX.match(text):
+            rest = TURN_PREFIX.sub("", text)
+            polished[field] = rest[:1].upper() + rest[1:]
+    return polished
+
+
+def polish_output(output):
+    """Same language rules for a structured model answer."""
+    return type(output).model_validate(polish_guide_text(output.model_dump()))
+
+
 def _swap_counter(items):
     return Counter({key(i["card_name"]): i["quantity"] for i in items or []})
 
@@ -66,7 +133,7 @@ def normalize_guide(guide, entries):
                 if wr <= UNFAVORABLE_WR
                 else "Equilibrato"
             )
-    return fixed
+    return polish_guide_text(fixed)
 
 
 def _text_fields(node, path=""):
@@ -363,7 +430,7 @@ def weighted_meta_estimate(guide, archetypes, snapshot=None):
         "source": snapshot.source if snapshot else None,
         "fetched_at": snapshot.fetched_at.isoformat() if snapshot else None,
         "note": reason
-        or f"Stima del modello sul {round(covered, 1):g}% del meta coperto, non risultati di partite.",
+        or f"Su {round(covered, 1):g}% del meta. Stima teorica, non risultati di partite.",
     }
 
 

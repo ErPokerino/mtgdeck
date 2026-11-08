@@ -41,6 +41,14 @@ function Test-Port($p) {
     try { $client.Connect("127.0.0.1", $p); return $true } catch { return $false } finally { $client.Close() }
 }
 
+function Get-CodeStamp {
+    # Same rule as code_stamp() in backend/app/config.py.
+    $files = Get-ChildItem (Join-Path $Root "backend"), (Join-Path $Root "config") -Recurse -File -Include *.py, *.md, *.json |
+        Where-Object { $_.FullName -notmatch '\\(tests|__pycache__)\\' }
+    $newest = ($files | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1).LastWriteTimeUtc
+    return ([DateTimeOffset]$newest).ToUnixTimeSeconds()
+}
+
 function Open-WhenReady($url, $p) {
     if ($NoBrowser) { return }
     # Opens the browser in the background as soon as the port answers.
@@ -106,9 +114,22 @@ if ($Db) {
 
 # --- Server -----------------------------------------------------------------
 if (Test-Port $Port) {
-    Write-Host "La porta $Port e' gia' in uso: l'app e' probabilmente gia' avviata." -ForegroundColor Yellow
-    if (-not $NoBrowser) { Start-Process "http://127.0.0.1:$Port" }
-    exit 0
+    $health = $null
+    try { $health = Invoke-RestMethod "http://127.0.0.1:$Port/api/health" -TimeoutSec 3 } catch { }
+    $stale = $health -and ((-not $health.code_stamp) -or ($health.code_stamp -lt (Get-CodeStamp)))
+    if (-not $stale) {
+        Write-Host "La porta $Port e' gia' in uso: l'app e' gia' avviata." -ForegroundColor Yellow
+        if (-not $NoBrowser) { Start-Process "http://127.0.0.1:$Port" }
+        exit 0
+    }
+    if (-not $health.pid) {
+        # A server started before this check existed cannot be identified safely.
+        Fail "sulla porta $Port gira una versione precedente dell'app: chiudi la sua finestra (o riavvia il PC) e rilancia."
+    }
+    Step "Il server sulla porta $Port usa codice vecchio: lo riavvio"
+    Stop-Process -Id $health.pid -Force
+    for ($i = 0; ($i -lt 40) -and (Test-Port $Port); $i++) { Start-Sleep -Milliseconds 250 }
+    if (Test-Port $Port) { Fail "la porta $Port non si e' liberata." }
 }
 
 $uvicorn = @("-m", "uvicorn", "main:app", "--app-dir", "backend", "--host", "127.0.0.1", "--port", "$Port")

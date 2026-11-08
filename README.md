@@ -43,7 +43,7 @@ Al primo avvio vengono creati database e catalogo. La sincronizzazione iniziale 
 - **Statistiche del builder**: fonti per colore rispetto ai requisiti di Karsten, terre tappate, probabilità di terre (anche entro un mulligan London) e interazione in main e sideboard, ricalcolate a ogni modifica. Eliminare una carta mostra "Annulla".
 - **Vantaggio carte**: conta solo le carte che fanno guadagnare carte. Cantrip, loot e rummage restano fuori perché lasciano invariato il numero di carte in mano. Il filtro "Cantrip" le mostra a parte.
 - **Import/Export**: invece di liste di esempio scritte a mano, puoi partire dalla lista di consenso di uno degli 8 archetipi più giocati del metagame corrente.
-- **Struttura del mazzo**: il builder conta creature, interazione, vantaggio carte, sweeper e counter del main, e dice a quali archetipi del campo la lista somiglia per costruzione ("Costruita come"). Se l'archetipo scelto è control o aggro e la lista è costruita come un altro piano, lo segnala.
+- **Struttura del mazzo**: il builder conta creature, interazione, vantaggio carte, sweeper e counter del main, e dice a quali archetipi del meta la lista somiglia per costruzione ("Costruita come"). Se l'archetipo scelto è control o aggro e la lista è costruita come un altro piano, lo segnala.
 - **Ricerca carte**: "/" porta il focus sulla ricerca. C'è un filtro per funzione (rimozione, counter, pescata, hate al cimitero…, dai tag Scryfall) e i filtri attivi compaiono come chip rimovibili.
 - **Stima prima dell'avvio**: sotto ogni pulsante di AI Studio compaiono durata e token medi delle ultime 10 esecuzioni dello stesso tipo e modello. Se in `config/ai-models.json` è impostata la tariffa del modello, compare anche il costo.
 - **Generazione e Analisi matchup** girano sul server come lavori persistenti: AI Studio mostra la fase reale, permette di annullare e ritrova il lavoro dopo un reload. Dal Metagame, "Costruisci da questo archetipo" apre la generazione con quel punto di partenza.
@@ -70,6 +70,8 @@ Le immagini ufficiali in risoluzione normale vengono scaricate da Scryfall e con
 
 Il database predefinito è `data/mtgdeck.db`, nel server dell'app, **non nel cloud del browser**. Conserva mazzi, guide, revisioni e impostazioni (compresa la chiave provider inserita nella UI). Non pubblicarlo. Per un backup coerente usa SQLite `.backup` oppure arresta l'app prima di copiare il database. Puoi configurare `DATABASE_URL`; per PostgreSQL occorre installare il driver appropriato. Il deployment multiutente e l'autenticazione non sono implementati: il servizio è progettato come workbench personale. Le richieste che modificano dati sono accettate solo dall'origine dell'app o da quelle in `CORS_ORIGINS` (predefinite: `127.0.0.1`/`localhost` su 5173 e 8090), così una pagina web visitata non può usare l'API locale. L'immagine Docker ascolta su `0.0.0.0`: non esporla in rete senza un proxy con autenticazione.
 
+`avvia.bat` riavvia da solo un server rimasto aperto con codice più vecchio di quello su disco; un server avviato prima di questo controllo va chiuso a mano una volta.
+
 ## Legalità e qualità delle analisi
 
 La validazione usa `legalities` di Scryfall per identità Oracle: banlist, rotazione, limite combinato delle copie e relative eccezioni. La stampa mostrata non determina da sola la legalità. In Constructed il minimo è **60 main** e il massimo **15 side**, companion incluso. Il generatore propone, per scelta, **60+15**. Le restrizioni specifiche dei companion richiedono una verifica manuale e impediscono la certificazione automatica della lista.
@@ -80,7 +82,7 @@ Le skill motivano engine, densità, manabase, clock, interazioni Oracle, esclusi
 
 ### Generazione dei mazzi
 
-Il meta non limita le scelte: è il campo da battere. Il punto di partenza si sceglie in AI Studio:
+Il meta non limita le scelte: è il meta da battere. Il punto di partenza si sceglie in AI Studio:
 - **Lista di consenso di un archetipo del meta.** L'app aggrega le liste complete dell'archetipo con il metodo di Frank Karsten: ogni copia entra se la gioca il maggior numero di liste. Le carte nell'80% delle liste o più sono il *core*, le altre i *flex*. Ogni differenza della proposta rispetto al consenso deve essere motivata: carta, copie, matchup che migliora e costo opportunità.
 - **Brew dalla tua tesi.** Archetipi, colori e build-around fuori meta sono ammessi. Due liste di consenso servono come riferimento di densità e come fonte di carte già testate:
   - quella più vicina **per colori**;
@@ -88,7 +90,7 @@ Il meta non limita le scelte: è il campo da battere. Il punto di partenza si sc
 
   Prima contava solo il colore. Un "Rakdos control" riceveva così Rakdos Sacrifice e Jund, due aggro, e ne copiava le carte, per esempio 4 Bloodtithe Harvester. Ora ogni riferimento dichiara perché è stato scelto. Il modello prende carte da un riferimento con un piano diverso, non la sua struttura.
 
-Il modello riceve anche la **struttura degli archetipi del campo**: creature, MV medio, interazione, vantaggio carte, sweeper e counter delle liste di consenso. Mostra come si gioca il piano richiesto nel formato. In Pioneer, per esempio, i control vanno da 0-2 creature con counter e sweeper (UW, Boros) a liste d'attrito con 11 creature (The Rock). Sulla lista finale l'app calcola a quali archetipi somiglia per costruzione. Se è più vicina a un'altra categoria che a quella richiesta, la segnala alla revisione e negli avvisi.
+Il modello riceve anche la **struttura degli archetipi del meta**: creature, MV medio, interazione, vantaggio carte, sweeper e counter delle liste di consenso. Mostra come si gioca il piano richiesto nel formato. In Pioneer, per esempio, i control vanno da 0-2 creature con counter e sweeper (UW, Boros) a liste d'attrito con 11 creature (The Rock). Sulla lista finale l'app calcola a quali archetipi somiglia per costruzione. Se è più vicina a un'altra categoria che a quella richiesta, la segnala alla revisione e negli avvisi.
 
 Il modello riceve il **campo atteso**: i primi 8 archetipi pesati per quota, ciascuno con il core, l'interazione attesa per lista (calcolata con i tag funzionali di Scryfall), la curva e la sideboard probabile. Riceve anche i testi Oracle completi delle carte chiave avversarie e del pool, cioè le carte osservate nel formato e lanciabili nei colori. Sono ammesse anche carte fuori pool, purché legali. La lista di staple scritta a mano è stata eliminata.
 
@@ -107,7 +109,7 @@ Il processo:
 Se il revisore trova problemi gravi o una verifica non è superata, il modello rivede la lista una volta sola. Una revisione che viola le regole del formato viene scartata e resta la lista precedente, già valida. Il risultato mostra:
 - punto di partenza e tabella dei delta;
 - analisi;
-- piani contro il campo;
+- piani contro il meta;
 - regole per cambiare i flex slot;
 - esito della revisione;
 - avvisi ancora aperti.
@@ -115,7 +117,7 @@ Se il revisore trova problemi gravi o una verifica non è superata, il modello r
 ### Guide
 
 La guida riceve gli stessi fatti della generazione:
-- il campo atteso;
+- il meta;
 - le liste di consenso complete dei primi 4 archetipi;
 - l'Oracle delle carte avversarie chiave;
 - i ruling Scryfall delle nostre carte;
@@ -129,7 +131,7 @@ Per ogni matchup principale indica:
 - la sidata motivata;
 - una stima Bo3 con confidenza.
 
-L'analisi approfondita di un singolo matchup resta compito dell'Analisi matchup. Al posto del punteggio numerico c'è una posizione qualitativa nel campo. La stima ponderata è un'opinione del modello, perché nessuna fonte pubblica dati testa a testa.
+L'analisi approfondita di un singolo matchup resta compito dell'Analisi matchup. Al posto del punteggio numerico c'è una posizione qualitativa nel meta. La stima ponderata è un'opinione del modello, perché nessuna fonte pubblica dati testa a testa.
 
 Le guide passano **bozza → controlli deterministici → revisione con correzioni → verifica dei passaggi modificati**, finché un passaggio si chiude senza nulla da correggere. I controlli deterministici verificano:
 - legalità della lista nel formato (ripetuta a ogni lettura ed export contro il catalogo corrente);
@@ -172,7 +174,7 @@ Al primo accesso viene proposto un percorso interattivo di sei tappe nelle sezio
 
 Il playtest è un sandbox solitario manuale, non un motore di regole né un avversario AI. Il campo mostra due corsie distinte: creature e altri permanenti sopra, terre e fonti sotto; la mano rimane separata. Le corsie scorrono orizzontalmente quando contengono molte carte. La prima azione conferma automaticamente la mano; dopo un London mulligan devi prima selezionare il numero corretto di carte da mettere in fondo. Puoi giocare, tappare, spostare, pescare, fare scry/surveil, cambiare vite, segnalini, mescolare e annullare un'azione.
 
-Le carte sono ingrandibili e hanno azioni esplicite. “Azioni” apre immagine e testo leggibili, facce e pedine. Transform/MDFC si possono girare; split, avventure e Room non vengono erroneamente trattate come carte con retro. Fuori dal campo le carte tornano al fronte e perdono i segnalini. Le pedine ufficiali sono risolte su richiesta tramite le relazioni Scryfall; in assenza di connessione puoi creare una pedina personalizzata. Le pedine che lasciano il campo cessano di esistere. Le modifiche al playtest non cambiano la lista salvata. La configurazione post-side viene applicata solo avviando la nuova partita; puoi annullarla.
+Le carte sono ingrandibili e hanno azioni esplicite. “Azioni” apre immagine e testo leggibili, facce e pedine. Transform/MDFC si possono girare; split, avventure e Room non vengono erroneamente trattate come carte con retro. Fuori dal meta le carte tornano al fronte e perdono i segnalini. Le pedine ufficiali sono risolte su richiesta tramite le relazioni Scryfall; in assenza di connessione puoi creare una pedina personalizzata. Le pedine che lasciano il meta cessano di esistere. Le modifiche al playtest non cambiano la lista salvata. La configurazione post-side viene applicata solo avviando la nuova partita; puoi annullarla.
 
 ## Verifiche
 

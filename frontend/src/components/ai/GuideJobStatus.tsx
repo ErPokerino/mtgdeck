@@ -5,11 +5,11 @@ const phases: Record<string, string> = {
   queued: "Avvio dell’analisi",
   draft: "Scrittura del primer",
   list_and_matchup_checks: "Controllo di lista e matchup",
-  oracle_review: "Revisione Oracle e correzioni",
+  oracle_review: "Revisione delle regole e correzioni",
   corrections_applied: "Correzioni applicate",
   verify_corrections: "Verifica dei passaggi corretti",
   repair_review: "Verifica delle fonti delle correzioni",
-  weighted_estimate: "Calcolo del winrate ponderato",
+  weighted_estimate: "Calcolo del winrate stimato",
   ready_to_save: "Preparazione del salvataggio",
   save: "Salvataggio nell’archivio",
 };
@@ -54,9 +54,7 @@ export function GuideJobStatus({
           </span>
         )}
       </div>
-      <p className="text-sm text-slate-400">
-        {job.deck_name} · {job.model_id}
-      </p>
+      <p className="text-sm text-slate-400">{job.deck_name}</p>
       {active ? (
         <>
           <p className="text-sm text-slate-300">

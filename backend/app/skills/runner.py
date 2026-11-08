@@ -28,6 +28,7 @@ from app.services.guide_quality import (
     weighted_meta_estimate,
     evidence_context,
     legality_report,
+    polish_output,
     require_fresh_catalog,
 )
 from app.skills.schemas import (
@@ -578,6 +579,7 @@ ANALISI MATCHUP SPOT TESTA A TESTA ({fmt.upper()}):
             + "\n\nANALISI PRECEDENTE (JSON):\n"
             + matchup_out.model_dump_json()
         )
+    matchup_out = polish_output(matchup_out)
     # The Bo3 figure follows from the two game estimates: it cannot contradict them.
     matchup_out.overall_expected_winrate_deck_a_pct = bo3_winrate(
         matchup_out.expected_winrate_deck_a_pre_side_pct,
@@ -907,6 +909,7 @@ ANALISI PUNTI DEBOLI E MIGLIORAMENTO MAZZO:
             warnings.extend(errors)
 
     assert improvement_out is not None
+    improvement_out = polish_output(improvement_out)
     step("after_metrics")
     after_report = validate_deck_entries(fmt, improved_entries)
     warnings.extend(

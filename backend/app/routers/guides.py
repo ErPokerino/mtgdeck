@@ -4,7 +4,11 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Deck, DeckCard, GuideVersion, Card
 from app.services import guide_jobs
-from app.services.guide_quality import archived_guide_warnings, legality_report
+from app.services.guide_quality import (
+    archived_guide_warnings,
+    legality_report,
+    polish_guide_text,
+)
 from app.services.guide_images import load_guide_images
 from app.services.guide_pdf import render_guide_pdf
 from app.skills.schemas import AIDeckGuideOutput, AIDeckGuideRequest
@@ -49,7 +53,7 @@ def reviewed_guide(db, version):
         for x in version.deck_snapshot
         if x.get("oracle_id") in cards
     ]
-    guide = dict(version.guide_json)
+    guide = polish_guide_text(dict(version.guide_json))
     guide["rules_warnings"] = archived_guide_warnings(guide, entries)
     missing = [
         x.get("card_name", "?") for x in version.deck_snapshot if x.get("oracle_id") not in cards

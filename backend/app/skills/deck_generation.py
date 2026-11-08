@@ -34,6 +34,7 @@ from app.services.deck_validator import (
 from app.services.guide_quality import (
     evidence_context,
     key,
+    polish_output,
     require_fresh_catalog,
     validate_swaps,
 )
@@ -120,12 +121,12 @@ class GenerationContext:
 
 def field_text_block(snapshot, field_model: List[deck_engine.FieldArchetype], all_shares: float) -> str:
     if not snapshot:
-        return "CAMPO ATTESO: metagame non disponibile. Dichiara l'incertezza e non inventare quote."
+        return "META ATTESO: metagame non disponibile. Dichiara l'incertezza e non inventare quote."
     source = snapshot.source or "n/d"
     if not snapshot.period_label or snapshot.period_label not in source:
         source += f", periodo {snapshot.period_label or 'n/d'}"
     header = (
-        f"CAMPO ATTESO (fonte {source}, "
+        f"META ATTESO (fonte {source}, "
         f"{snapshot.decklists_count or 0} liste complete, copertura {snapshot.coverage_pct or 0}%"
         f"; quota fuori dagli archetipi elencati: {max(0.0, round(100 - all_shares, 1))}%). "
         "Valori per lista = inclusione × copie medie osservate nelle liste dell'archetipo."
@@ -221,7 +222,7 @@ def structures_block(structures: List[deck_engine.ArchetypeStructure], requested
         return ""
     category = deck_engine.ROLE_CATEGORY.get((requested or "").lower())
     lines = [
-        "=== STRUTTURA DEGLI ARCHETIPI DEL CAMPO (calcolata dalle liste di consenso, solo main) ===",
+        "=== STRUTTURA DEGLI ARCHETIPI DEL META (calcolata dalle liste di consenso, solo main) ===",
         "Creature = copie di creature; interazione = rimozioni, counter, sweeper e scarto; "
         "vantaggio carte = carte che fanno guadagnare carte (tag Scryfall, esclusi cantrip, loot e selezione).",
     ]
@@ -727,10 +728,10 @@ def run_deck_generation_skill(
         "RICHIESTA:\n"
         f"- Formato: {fmt.upper()}\n"
         f"- Punto di partenza: {('lista di consenso di ' + ctx.base.name) if ctx.base else 'brew dalla tesi del giocatore'}\n"
-        f"- Archetipo desiderato: {(ctx.base.category if ctx.base else req.archetype) or 'scelta ottimale per il campo'}\n"
+        f"- Archetipo desiderato: {(ctx.base.category if ctx.base else req.archetype) or 'scelta ottimale per il meta'}\n"
         f"- Colori: {''.join(sort_colors_wubrg(list(ctx.allowed_colors))) or 'liberi'} ({req.color_preset_name or 'auto'})\n"
         f"- Build-around: {', '.join(req.build_around_cards) or 'nessuna'}\n"
-        f"- Obiettivo e vincoli del giocatore: {req.prompt or 'la lista più competitiva possibile contro il campo atteso.'}"
+        f"- Obiettivo e vincoli del giocatore: {req.prompt or 'la lista più competitiva possibile contro il meta.'}"
     )
     base_prompt = evidence_context(db, fmt) + "\n" + request_block + "\n\n" + ctx.text
     max_retries = max(1, int(cfg.get("max_retries", 3)))
@@ -852,6 +853,7 @@ def run_deck_generation_skill(
             log.warning("deck_revision failed: %s", type(exc).__name__)
             revision["note"] = "Revisione non riuscita: resta la lista precedente."
 
+    out = polish_output(out)
     if ctx.base:
         out.base_archetype = ctx.base.name
         if key(ctx.base.name) not in key(out.deck_name):

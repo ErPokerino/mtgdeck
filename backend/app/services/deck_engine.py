@@ -686,7 +686,7 @@ def role_issues(
     same = [a.name for a in field if a.category == category][:3]
     return [
         f"Archetipo richiesto {requested}, ma per struttura (creature, curva, interazione, "
-        f"vantaggio carte) la lista è più vicina a {closest} che ai {category} del campo "
+        f"vantaggio carte) la lista è più vicina a {closest} che ai {category} del meta "
         f"({', '.join(same)}). Ricostruisci la struttura o motiva perché questo {requested} è diverso."
     ]
 

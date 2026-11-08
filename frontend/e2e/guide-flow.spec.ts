@@ -28,7 +28,7 @@ const approvedGuide = {
     uncovered_share_pct: 50,
     // Older guides still carry the formula: the reader must not show it.
     formula: "Somma(quota × WR) / quote coperte",
-    note: "Stima del modello sul 50% del meta coperto, non risultati di partite.",
+    note: "Su 50% del meta. Stima teorica, non risultati di partite.",
     rows: [
       { archetype: "Aggro", share_pct: 30, winrate_pct: 60 },
       { archetype: "Control", share_pct: 20, winrate_pct: 40 },
@@ -113,7 +113,7 @@ test("failed verification preserves draft; resume completes without generating a
   await page.getByRole("button", { name: "Genera nuova versione" }).click();
   await expect(
     page.getByRole("region", { name: "Stato generazione guida" }),
-  ).toContainText("Revisione Oracle");
+  ).toContainText("Revisione delle regole");
   await expect(page.locator(".guide-reader")).toHaveCount(0);
   current = {
     ...current,
@@ -135,8 +135,8 @@ test("failed verification preserves draft; resume completes without generating a
   await expect(
     page.getByRole("heading", { name: approvedGuide.deck_name }),
   ).toBeVisible();
-  await expect(page.getByText("52.0%", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Lista legale in MODERN/)).toBeVisible();
+  await expect(page.getByText("52%", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Lista legale in Modern/)).toBeVisible();
   await expect(page.getByText(/Somma\(/)).toHaveCount(0);
   expect(starts).toBe(1);
   expect(resumes).toBe(1);
@@ -181,7 +181,7 @@ test("archived guide with open issues completes its review from the same text", 
   await page.getByRole("button", { name: "Completa la revisione" }).click();
   await expect(
     page.getByRole("region", { name: "Stato generazione guida" }),
-  ).toContainText("Revisione Oracle");
+  ).toContainText("Revisione delle regole");
   expect(completes).toBe(1);
 });
 

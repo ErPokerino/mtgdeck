@@ -14,6 +14,7 @@ from app.services.guide_pdf import render_guide_pdf
 from app.services.guide_quality import (
     legality_report,
     normalize_guide,
+    polish_guide_text,
     validate_guide,
     validate_stated_facts,
 )
@@ -514,7 +515,8 @@ def verified_guide(guide_data):
             "source": "MTGTop8 · Last 2 Months",
             "snapshot_id": 20,
             "fetched_at": "2026-11-04T20:09:36",
-            "note": "Stima del modello sul 64% del meta, non risultati di partite.",
+            "note": "Stima teorica AI, non risultati di partite.",
+            "rows": [{"archetype": "UR Aggro", "share_pct": 16.0, "winrate_pct": 58.0}],
             # What older guides still carry: it must not be printed anymore.
             "formula": "Somma(quota meta × WR teorico Bo3) / somma(quote coperte)",
         },
@@ -528,8 +530,9 @@ def test_pdf_states_the_verified_legality_and_drops_technical_notes(guide_data):
             verified_guide(guide_data), "Guida", "pioneer", [{"quantity": 60, "board": "main", "card_name": "Plains"}]
         )
     )
-    assert "Lista legale in PIONEER" in text and "08/11/2026" in text and "07/11/2026" in text
-    assert "MTGTop8" in text and "04/11/2026" in text
+    assert "Lista legale in Pioneer · banlist aggiornata al 07/11/2026" in text
+    assert "MTGTop8, ultimi 2 mesi, rilevati il 04/11/2026" in text
+    assert "Il meta" in text and "Winrate stimato" in text and "54%" in text
     for removed in [
         "verificare la legalità",
         "Somma(",
@@ -537,8 +540,73 @@ def test_pdf_states_the_verified_legality_and_drops_technical_notes(guide_data):
         "Snapshot 20",
         "PUNTI DA VERIFICARE",
         "Punti da verificare",
+        "Modello",
+        "modello",
+        "gemini",
+        "offline-fixture",
+        "UTC",
+        "Scryfall",
+        "campo",
+        "Stima teorica AI",
+        ".0%",
     ]:
         assert removed not in text, removed
+
+
+def test_language_for_a_player_on_new_and_archived_guides():
+    guide = polish_guide_text(
+        {
+            "executive_summary": "Il 24% del campo gioca aggro; nel campo atteso domina il 30% combinato del campo.",
+            "tier_assessment": "Solida contro il campo atteso e contro un campo aggressivo.",
+            "meta_positioning": "UR Aggro (16.0%) e gli archetipi del campo. Attention: resta in campo sul campo di battaglia.",
+            "early_game_plan": "Turni 1-3: dai priorità alle terre.",
+            "mid_game_plan": "Turni 4-6: prepara il flip.",
+            "late_game_plan": "Turni 7+: chiudi.",
+            "card_roles": [
+                {"card_name": "A", "role_category": "Primary Threat"},
+                {"card_name": "B", "role_category": "Interaction/Removal"},
+                {"card_name": "C", "role_category": "Sideboard Tech"},
+                {"card_name": "D", "role_category": "Altro"},
+            ],
+            "model_id": "non è prosa: campo atteso",
+        }
+    )
+    assert guide["executive_summary"] == "Il 24% del meta gioca aggro; nel meta domina il 30% combinato del meta."
+    assert guide["tier_assessment"] == "Solida contro il meta e contro un meta aggressivo."
+    # The battlefield meaning of "campo" is correct Italian and stays.
+    assert guide["meta_positioning"] == "UR Aggro (16%) e gli archetipi del meta. Attenzione: resta in campo sul campo di battaglia."
+    assert guide["early_game_plan"] == "Dai priorità alle terre."
+    assert guide["late_game_plan"] == "Chiudi."
+    assert [r["role_category"] for r in guide["card_roles"]] == ["Minaccia principale", "Interazione", "Tech di sideboard", "Altro"]
+    assert guide["model_id"] == "non è prosa: campo atteso"
+
+
+def test_archived_guide_reads_in_the_new_language(client, db, payload, guide_data):
+    did = client.post("/api/decks", json=payload).json()["id"]
+    old = dict(guide_data, executive_summary="Batte il 24% del campo.")
+    version = GuideVersion(
+        deck_id=did, deck_name="T", format_id="modern", model_id="m", deck_snapshot=[], guide_json=old
+    )
+    db.get(Deck, did).guide_json = old
+    db.add(version)
+    db.commit()
+    assert client.get(f"/api/guides/{version.id}").json()["guide"]["executive_summary"] == "Batte il 24% del meta."
+    assert client.get(f"/api/decks/{did}").json()["guide_json"]["executive_summary"] == "Batte il 24% del meta."
+    assert db.get(GuideVersion, version.id).guide_json["executive_summary"] == "Batte il 24% del campo."
+
+
+def test_prompts_never_call_the_metagame_campo():
+    from pathlib import Path
+
+    import re
+
+    folder = Path(guide_pipeline.__file__).parents[1] / "skills" / "prompts"
+    for path in folder.glob("*.md"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if '"campo"' in line:
+                continue  # the rule that forbids the word
+            for match in re.finditer(r"[^.]{0,30}\bcampo\b[^.]{0,20}", line, re.I):
+                assert re.search(r"\b(in|sul) campo\b", match.group(0), re.I), (path.name, match.group(0))
 
 
 def test_pdf_warns_loudly_when_a_card_is_no_longer_legal(guide_data):
@@ -551,6 +619,7 @@ def test_pdf_warns_loudly_when_a_card_is_no_longer_legal(guide_data):
     }
     text = pdf_text(render_guide_pdf(guide, "Guida", "pioneer", []))
     assert "LISTA NON LEGALE" in text and "Fatal Push è bandita in Pioneer." in text
+    assert "Lista non legale in Pioneer: vedi la prima pagina" in text
     assert "Lista legale in" not in text
 
 

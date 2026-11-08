@@ -20,7 +20,7 @@ Deck Builder, Set & Banlist, Metagame, AI Studio, Playtest, Mazzi e guide.
 | on the play, on the draw | in gioco, in pesca | |
 | matchup, beatdown, flex slot | | gergo competitivo |
 | sidata, piano di sideboard | sideboarding | |
-| archetipo, campo atteso, quota | meta share | "quota" è la percentuale del meta |
+| archetipo, meta, field, quota | meta share, campo atteso | "quota" è la percentuale del meta; "campo" solo per il campo di battaglia ("in campo") |
 | lista di consenso | sample deck, lista campione | lista aggregata dalle liste da torneo |
 | lista di consenso | mazzo di esempio, sample | anche in Import/Export: le liste aggregate del meta corrente |
 | Common, Uncommon, Rare, Mythic | Mythic Rare | rarità in inglese, come sulle carte |

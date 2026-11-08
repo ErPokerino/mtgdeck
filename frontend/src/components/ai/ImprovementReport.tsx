@@ -274,7 +274,7 @@ export const ImprovementReport: React.FC<{
         </p>
 
         <AnalysisDeltaCard
-          title="Confronto Deterministico: Lista Attuale vs Lista Migliorata"
+          title="Prima e dopo i cambi"
           before={comparison.before_analysis}
           after={comparison.after_analysis}
         />

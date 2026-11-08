@@ -376,7 +376,7 @@ def test_control_brew_gets_a_reference_by_plan_not_only_by_colours(db, meta):
     # Colours alone would pick only Mono Red, an aggro list.
     assert roles == {"Mono Red": "per colori (piano aggro)", "Red Control": "per piano (control)"}
     assert "[riferimento per piano (control)]" in ctx.text
-    assert "=== STRUTTURA DEGLI ARCHETIPI DEL CAMPO" in ctx.text
+    assert "=== STRUTTURA DEGLI ARCHETIPI DEL META" in ctx.text
     assert "→ Red Control (control, 3%)" in ctx.text
 
 

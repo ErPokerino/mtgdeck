@@ -732,7 +732,7 @@ export function AIStudioView({
             <div>
               <h2 className="text-xl font-bold">Progetta le tue 75</h2>
               <p className="text-sm text-slate-400 mt-2">
-                Lista da 60 main + 15 side, costruita contro il campo atteso del
+                Lista da 60 main + 15 side, costruita contro il meta del
                 meta. L'app calcola fonti, curva e probabilità, poi un revisore
                 cerca i punti deboli prima del salvataggio.
               </p>
@@ -762,8 +762,8 @@ export function AIStudioView({
               </select>
               <span className="block text-xs text-slate-400 mt-2">
                 {baseArch === ""
-                  ? "Archetipi e carte fuori meta sono ammessi: le liste più vicine servono solo come riferimento di densità, e ogni scelta viene ottimizzata contro il campo."
-                  : "Si parte dalle carte che le liste dell'archetipo hanno in comune; ogni differenza dal consenso verrà motivata contro il campo."}
+                  ? "Archetipi e carte fuori meta sono ammessi: le liste più vicine servono solo come riferimento di densità, e ogni scelta viene ottimizzata contro il meta."
+                  : "Si parte dalle carte che le liste dell'archetipo hanno in comune; ogni differenza dal consenso verrà motivata contro il meta."}
               </span>
             </label>
             <div className="grid md:grid-cols-2 gap-4">
@@ -931,11 +931,6 @@ export function AIStudioView({
                   <h2 className="text-2xl font-bold mt-2">
                     {generation.ai_result.deck_name}
                   </h2>
-                  <p className="text-xs text-slate-400 mt-2">
-                    {generation.meta?.model_id} · {generation.meta?.ai_calls}{" "}
-                    chiamate AI ·{" "}
-                    {Math.round((generation.meta?.duration_ms || 0) / 1000)} s
-                  </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -991,8 +986,7 @@ export function AIStudioView({
               La guida si salva solo a revisione conclusa, con lista legale e
               ogni correzione verificata. Di solito bastano pochi minuti; se il
               tempo non basta la bozza viene conservata e puoi riprenderne la
-              revisione. Ogni versione approvata si trova in Mazzi e guide. Il
-              winrate ponderato usa le quote del metagame disponibile.
+              revisione. Ogni versione approvata si trova in Mazzi e guide.
             </p>
             {runButton(
               guideBusy,

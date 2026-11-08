@@ -5,6 +5,12 @@ import { RatingForm } from "./RatingForm";
 
 const day = (value?: string | null) =>
   value ? new Date(value).toLocaleDateString("it-IT") : "";
+const pct = (value: number) =>
+  `${Number(value.toFixed(1)).toLocaleString("it-IT")}%`;
+const capitalize = (text: string) =>
+  text ? text[0].toUpperCase() + text.slice(1) : "";
+const metaSource = (source?: string) =>
+  (source || "").replace(" · ", ", ").replace("Last 2 Months", "ultimi 2 mesi");
 
 export function GuideReader({
   guide,
@@ -37,7 +43,12 @@ export function GuideReader({
   };
   const estimate = guide.meta_estimate;
   const legality = guide.legality;
-  const formatLabel = (guide.format_id || legality?.format_id || "").toUpperCase();
+  const formatLabel = capitalize(guide.format_id || legality?.format_id || "");
+  const openMatchup = (index: number) => {
+    const target = document.getElementById(`guide-matchup-${index}`);
+    if (target instanceof HTMLDetailsElement) target.open = true;
+    target?.scrollIntoView({ behavior: "smooth" });
+  };
   const plans: any[] = guide.sideboard_guide || [];
   const swapFields = (plan: any) => {
     const usesBase = side === "base" || plan[`on_the_${side}_uses_base`];
@@ -131,11 +142,8 @@ export function GuideReader({
       )}
       {legality?.status === "legal" && (
         <p className="text-sm text-emerald-200" role="status">
-          Lista legale in {formatLabel} · controllo automatico del{" "}
-          {day(legality.checked_at)}
-          {legality.catalog_synced_at &&
-            ` su catalogo e banlist aggiornati al ${day(legality.catalog_synced_at)}`}
-          .
+          Lista legale in {formatLabel} · banlist aggiornata al{" "}
+          {day(legality.catalog_synced_at || legality.checked_at)}
         </p>
       )}
       {guide.quality_review?.status === "warnings" && (
@@ -182,18 +190,12 @@ export function GuideReader({
       )}
       {guide.quality_review?.status === "passed" && (
         <p className="text-sm text-emerald-200" role="status">
-          Versione salvata dopo i controlli di lista, sidate, copertura dei
-          matchup e revisione Oracle
-          {guide.quality_review.revision_count > 0 &&
-            ` · ${guide.quality_review.revision_count} ${guide.quality_review.revision_count === 1 ? "ciclo" : "cicli"} di correzione`}
-          {guide.generated_at &&
-            ` · ${new Date(guide.generated_at).toLocaleString("it-IT")}`}
-          .
+          Guida verificata{guide.generated_at && ` · ${day(guide.generated_at)}`}
         </p>
       )}
       <div className="grid md:grid-cols-3 gap-4">
         <section className="panel">
-          <p className="eyebrow">Posizione nel campo atteso</p>
+          <p className="eyebrow">Posizione nel meta</p>
           {guide.tier_assessment ? (
             <p className="text-sm text-slate-300 mt-3 leading-relaxed">
               {guide.tier_assessment}
@@ -213,78 +215,67 @@ export function GuideReader({
           )}
         </section>
         <section className="panel md:col-span-2">
-          <p className="eyebrow">
-            Stima del modello Bo3 · ponderata sulle quote osservate
-          </p>
+          <p className="eyebrow">Winrate stimato Bo3</p>
           <p className="text-3xl text-emerald-300 font-bold my-3">
             {estimate?.weighted_winrate_pct != null
-              ? `${estimate.weighted_winrate_pct.toFixed(1)}%`
+              ? pct(estimate.weighted_winrate_pct)
               : "Non disponibile"}
           </p>
           <p className="text-xs text-slate-400">
-            Opinione teorica del modello, non un risultato di partite: nessuna
-            fonte pubblica dati testa a testa.
+            {estimate?.weighted_winrate_pct != null
+              ? `Su ${pct(estimate.coverage_pct)} del meta. Stima teorica, non risultati di partite.`
+              : estimate?.reason || "Dato non disponibile per questa versione."}
           </p>
-          <p className="text-sm text-slate-300 mt-2">
-            {estimate?.note ||
-              "Versione storica senza dati di ponderazione registrati. Il valore non è ricostruibile da questa versione."}
-          </p>
-          {estimate && (
-            <details className="mt-3 text-sm">
-              <summary className="cursor-pointer text-sky-300">
-                Copertura {estimate.coverage_pct}% · Matchup considerati
-              </summary>
-              <div className="overflow-x-auto mt-3">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Archetipo</th>
-                      <th>Quota</th>
-                      <th>WR teorico</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {estimate.rows?.map((r: any) => (
+          {estimate?.rows?.length > 0 && (
+            <div className="overflow-x-auto mt-4">
+              <table className="data-table text-sm">
+                <thead>
+                  <tr>
+                    <th scope="col">Archetipo</th>
+                    <th scope="col">Quota</th>
+                    <th scope="col">Winrate</th>
+                    <th scope="col">Matchup</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {estimate.rows.map((r: any) => {
+                    const index = plans.findIndex(
+                      (plan) => plan.opponent_archetype === r.archetype,
+                    );
+                    return (
                       <tr key={r.archetype}>
-                        <td>{r.archetype}</td>
-                        <td>{r.share_pct}%</td>
-                        <td>{r.winrate_pct}%</td>
+                        <td>
+                          {index >= 0 ? (
+                            <button
+                              className="text-sky-300 underline decoration-dotted text-left"
+                              onClick={() => openMatchup(index)}
+                            >
+                              {r.archetype}
+                            </button>
+                          ) : (
+                            r.archetype
+                          )}
+                        </td>
+                        <td>{pct(r.share_pct)}</td>
+                        <td>{pct(r.winrate_pct)}</td>
+                        <td>{index >= 0 ? plans[index].matchup_difficulty : ""}</td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="mt-3">
-                Meta non coperto: {estimate.uncovered_share_pct}%.{" "}
-                {estimate.missing_archetypes?.join(", ")}
-              </p>
-              <p className="text-slate-400 mt-2">
-                {estimate.source} ·{" "}
-                {estimate.fetched_at &&
-                  new Date(estimate.fetched_at).toLocaleString("it-IT")}
-              </p>
-            </details>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {estimate?.source && (
+            <p className="text-xs text-slate-400 mt-3">
+              Dati del meta: {metaSource(estimate.source)}
+              {estimate.fetched_at && `, rilevati il ${day(estimate.fetched_at)}`}.
+              {estimate.missing_archetypes?.length > 0 &&
+                ` Senza stima: ${estimate.missing_archetypes.join(", ")}.`}
+            </p>
           )}
         </section>
       </div>
-      {guide.model_id && (
-        <details className="panel text-sm text-slate-400">
-          <summary className="cursor-pointer">
-            Fonti, modello e data dell’analisi
-          </summary>
-          {estimate?.source && (
-            <p className="mt-3">
-              Metagame: {estimate.source}
-              {estimate.fetched_at && `, rilevato il ${day(estimate.fetched_at)}`}.
-            </p>
-          )}
-          <p className="mt-2">
-            Modello: {guide.model_id}
-            {guide.generated_at &&
-              ` · ${new Date(guide.generated_at).toLocaleString("it-IT")}`}
-          </p>
-        </details>
-      )}
       <nav
         aria-label="Sezioni della guida"
         className="flex flex-wrap gap-2 text-sm"
@@ -303,7 +294,7 @@ export function GuideReader({
         </a>
       </nav>
       <div id="guide-strategy" className="space-y-4 scroll-mt-32">
-        {section("Tesi del mazzo", guide.executive_summary)}
+        {section("Il piano del mazzo", guide.executive_summary)}
         {section("Posizionamento", guide.meta_positioning)}
         {section(
           "Soglie e interazioni del formato",
@@ -472,11 +463,17 @@ export function GuideReader({
           const { usesBase, inf, outf } = swapFields(plan);
           const hasPlan = plan[inf]?.length || plan[outf]?.length;
           return (
-            <details className="panel" key={i} open={i === 0}>
+            <details
+              className="panel scroll-mt-32"
+              id={`guide-matchup-${i}`}
+              key={i}
+              open={i === 0}
+            >
               <summary className="cursor-pointer flex justify-between gap-3">
                 <strong>{plan.opponent_archetype}</strong>
                 <span className="text-amber-200 text-sm">
-                  {plan.matchup_difficulty} · {plan.expected_winrate_pct}% stimato
+                  {plan.matchup_difficulty} · {pct(plan.expected_winrate_pct)}{" "}
+                  stimato
                   {plan.confidence && ` · confidenza ${plan.confidence}`}{" "}
                   <ChevronDown className="inline w-4" />
                 </span>

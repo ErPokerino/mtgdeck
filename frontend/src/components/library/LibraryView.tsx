@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Archive,
   BarChart2,
@@ -52,19 +52,26 @@ export function LibraryView({
     id: number;
     name: string;
   } | null>(null);
+  // A reload after an action may start from an older render: it always follows the view
+  // on screen, and only the latest request may update it.
+  const view = useRef({ formatId, tab });
+  view.current = { formatId, tab };
+  const latestLoad = useRef(0);
   const load = async () => {
+    const request = ++latestLoad.current;
     setLoading(true);
     try {
       const [d, g] = await Promise.all([
-        api.listDecks(formatId, tab === "archived"),
-        api.listGuides(formatId),
+        api.listDecks(view.current.formatId, view.current.tab === "archived"),
+        api.listGuides(view.current.formatId),
       ]);
+      if (request !== latestLoad.current) return;
       setDecks(d);
       setGuides(g);
     } catch (e: any) {
-      setError(e.message);
+      if (request === latestLoad.current) setError(e.message);
     } finally {
-      setLoading(false);
+      if (request === latestLoad.current) setLoading(false);
     }
   };
   useEffect(() => {
@@ -173,16 +180,18 @@ export function LibraryView({
             .map((g) => (
               <section className="panel space-y-4" key={g.id}>
                 <p className="eyebrow">
-                  Guida #{g.id} ·{" "}
-                  {new Date(g.created_at).toLocaleString("it-IT")}
+                  {new Date(g.created_at).toLocaleDateString("it-IT")}
                 </p>
                 <h2 className="text-lg font-bold">{g.deck_name}</h2>
-                <p className="text-sm text-slate-400">
-                  {g.model_id} ·{" "}
-                  {g.deck_id
-                    ? "Associata al mazzo #" + g.deck_id
-                    : "Lista conservata nella guida"}
-                </p>
+                {g.weighted_winrate_pct != null && (
+                  <p className="text-sm text-slate-400">
+                    Winrate stimato Bo3:{" "}
+                    {Number(g.weighted_winrate_pct.toFixed(1)).toLocaleString(
+                      "it-IT",
+                    )}
+                    %
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-2">
                   <button
                     className="btn-primary"

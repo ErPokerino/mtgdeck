@@ -55,16 +55,11 @@ def test_every_hand_role_and_deck_entry_is_illustrated(guide_data):
         page = next(p for p, text in zip(reader.pages, texts, strict=True) if f"Mano {i} /" in text)
         assert drawings(reader, page) >= 7
     gallery = next(
-        p for p, text in zip(reader.pages, texts, strict=True) if "Mainboard / vista carte" in text
+        p for p, text in zip(reader.pages, texts, strict=True) if "Mainboard in immagini" in text
     )
     assert drawings(reader, gallery) == 4
-    roles = next(
-        p for p, text in zip(reader.pages, texts, strict=True) if "Copie, ruolo e decisioni" in text
-    )
-    start = (
-        reader.pages.index(roles)
-        if hasattr(reader.pages, "index")
-        else next(i for i, t in enumerate(texts) if "Copie, ruolo e decisioni" in t)
+    start = next(
+        i for i, t in enumerate(texts) if "Scelte carta per carta" in t and "Indice" not in t
     )
     end = next(
         i for i in range(start + 1, len(texts)) if "Sinergie e linee" in texts[i]

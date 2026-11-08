@@ -159,6 +159,9 @@ test("playtest: Fable transforms and returns to its front in hand", async ({
 }) => {
   await openPlaytest(page);
   const card = await getFable(page);
+  // The opening hand is random and the deck has four copies: compare with the start.
+  const inHand = page.locator('[data-card-name^="Fable"][data-zone="hand"]');
+  const copiesInHand = await inHand.count();
   await card.getByRole("button", { name: /^Gioca / }).click();
   const permanent = page
     .locator('[data-card-name^="Fable"][data-zone="permanents"]')
@@ -172,9 +175,7 @@ test("playtest: Fable transforms and returns to its front in hand", async ({
   await dialog
     .getByRole("combobox", { name: "Sposta carta in" })
     .selectOption("hand");
-  await expect(
-    page.locator('[data-card-name^="Fable"][data-zone="hand"]'),
-  ).toHaveCount(1);
+  await expect(inHand).toHaveCount(copiesInHand);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "../tmp/qa/playtest-desktop.png",
@@ -315,14 +316,12 @@ test("saved guide exposes weighted estimate, coverage and downloadable PDF", asy
     .fill("QA Reference");
   await page.getByRole("button", { name: "Leggi", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Guida salvata" });
-  await expect(dialog.getByText("52.0%", { exact: true })).toBeVisible();
-  await dialog
-    .getByText("Copertura 50% · Matchup considerati", { exact: true })
-    .click();
+  await expect(dialog.getByText("52%", { exact: true })).toBeVisible();
+  await expect(dialog.getByText(/Su 50% del meta/)).toBeVisible();
   await expect(
     dialog.getByRole("cell", { name: "Aggro test", exact: true }),
   ).toBeVisible();
-  await expect(dialog.getByText(/Somma\(/)).toHaveCount(0);
+  await expect(dialog.getByText(/Somma\(|offline-fixture/)).toHaveCount(0);
   const link = dialog.getByRole("link", { name: "Scarica PDF" });
   const result = await request.get((await link.getAttribute("href"))!);
   expect(result.headers()["content-type"]).toContain("application/pdf");

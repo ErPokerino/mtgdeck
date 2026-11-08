@@ -3,7 +3,7 @@
   "cases": [
     {
       "id": "pioneer-rakdos-kroxa-control",
-      "note": "Brew control con build-around: la struttura deve somigliare ai control del campo, non a un aggro dei colori.",
+      "note": "Brew control con build-around: la struttura deve somigliare ai control del meta, non a un aggro dei colori.",
       "format_id": "pioneer",
       "archetype": "control",
       "colors": ["B", "R"],
