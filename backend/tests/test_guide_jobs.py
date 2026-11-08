@@ -77,7 +77,7 @@ def test_cancel_while_model_is_running_never_publishes(
     assert db.query(GuideVersion).count() == 0
 
 
-def test_review_timeout_publishes_the_draft_with_open_issues(
+def test_review_timeout_never_publishes_and_keeps_the_draft(
     client, db, payload, jobs, monkeypatch, guide_data
 ):
     did = client.post("/api/decks", json=payload).json()["id"]
@@ -98,11 +98,12 @@ def test_review_timeout_publishes_the_draft_with_open_issues(
     monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
     guide_jobs._work(jid)
     db.expire_all()
-    assert db.get(GuideJob, jid).status == "completed"
-    review = db.query(GuideVersion).one().guide_json["quality_review"]
-    assert review["status"] == "warnings"
-    assert any("Revisione non completata" in i for i in review["open_issues"])
-    assert calls == [AIDeckGuideOutput, GuideReviewOutput]
+    job = db.get(GuideJob, jid)
+    assert job.status == "failed" and job.draft_json
+    assert "tempo massimo" in job.error and "Riprendi" in job.error
+    assert db.query(GuideVersion).count() == 0
+    # One automatic retry of the failed call, then the job stops resumable.
+    assert calls == [AIDeckGuideOutput, GuideReviewOutput, GuideReviewOutput]
 
 
 def test_resume_from_a_saved_draft_skips_generation(
@@ -198,12 +199,13 @@ def test_changed_deck_rejects_resume_instead_of_attaching_wrong_guide(
     assert db.query(GuideVersion).count() == 0
 
 
-def test_deadline_is_shared_and_unverified_patches_are_flagged(
+def test_deadline_is_shared_and_an_unverified_patch_is_never_published(
     db, guide_data, monkeypatch
 ):
     clock = [0.0]
     calls = []
     monkeypatch.setattr(guide_pipeline.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(guide_pipeline, "GUIDE_BUDGET_SECONDS", 720)
 
     class Provider:
         provider_name = "fake"
@@ -237,14 +239,11 @@ def test_deadline_is_shared_and_unverified_patches_are_flagged(
             )
 
     monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
-    result = runner.run_deck_guide_skill(
-        db, AIDeckGuideRequest(format_id="modern", decklist_text="60 Plains")
-    )
+    with pytest.raises(ValueError, match="tempo massimo"):
+        runner.run_deck_guide_skill(
+            db, AIDeckGuideRequest(format_id="modern", decklist_text="60 Plains")
+        )
     # Draft, full review, then the verification consumes the rest of the shared budget.
-    assert calls == [420, 210, 90]
-    review = result["guide"]["quality_review"]
-    assert review["status"] == "warnings"
-    assert any("applicata ma non verificata" in i for i in review["open_issues"])
-    assert result["guide"]["executive_summary"] == "Prima correzione"
-    assert db.query(GuideVersion).count() == 1
+    assert calls == [420, 180, 120]
+    assert db.query(GuideVersion).count() == 0
 

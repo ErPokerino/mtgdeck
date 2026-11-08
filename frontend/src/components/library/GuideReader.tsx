@@ -1,18 +1,43 @@
 import React, { useState } from "react";
 import { Download, ChevronDown } from "lucide-react";
+import { api } from "../../api/client";
 import { RatingForm } from "./RatingForm";
+
+const day = (value?: string | null) =>
+  value ? new Date(value).toLocaleDateString("it-IT") : "";
 
 export function GuideReader({
   guide,
   guideId,
   onInspect,
+  onReviewStarted,
 }: {
   guide: any;
   guideId?: number;
   onInspect?: (name: string) => void;
+  onReviewStarted?: (job: any) => void;
 }) {
   const [side, setSide] = useState<"base" | "play" | "draw">("base");
+  const [reviewState, setReviewState] = useState<
+    "idle" | "starting" | "started"
+  >("idle");
+  const [reviewError, setReviewError] = useState("");
+  const completeReview = async () => {
+    if (!guideId) return;
+    setReviewState("starting");
+    setReviewError("");
+    try {
+      const job = await api.completeGuideReview(guideId);
+      setReviewState("started");
+      onReviewStarted?.(job);
+    } catch (e: any) {
+      setReviewState("idle");
+      setReviewError(e.message);
+    }
+  };
   const estimate = guide.meta_estimate;
+  const legality = guide.legality;
+  const formatLabel = (guide.format_id || legality?.format_id || "").toUpperCase();
   const plans: any[] = guide.sideboard_guide || [];
   const swapFields = (plan: any) => {
     const usesBase = side === "base" || plan[`on_the_${side}_uses_base`];
@@ -94,21 +119,65 @@ export function GuideReader({
           </a>
         )}
       </div>
+      {legality?.status === "not_legal" && (
+        <div role="alert" className="notice-error">
+          <strong>Lista non legale in {formatLabel}.</strong>
+          <ul className="mt-2 list-disc pl-5 space-y-1">
+            {legality.issues?.map((issue: string, i: number) => (
+              <li key={i}>{issue}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {legality?.status === "legal" && (
+        <p className="text-sm text-emerald-200" role="status">
+          Lista legale in {formatLabel} · controllo automatico del{" "}
+          {day(legality.checked_at)}
+          {legality.catalog_synced_at &&
+            ` su catalogo e banlist aggiornati al ${day(legality.catalog_synced_at)}`}
+          .
+        </p>
+      )}
       {guide.quality_review?.status === "warnings" && (
         <div
           role="status"
           className="rounded-lg border border-amber-700 bg-amber-950/40 p-4 text-sm text-amber-100"
         >
-          <strong>Pubblicata con punti da verificare.</strong>
+          <strong>Versione archiviata con revisione non conclusa.</strong>
           <p className="mt-1">
-            La revisione non ha potuto chiudere questi rilievi: controllali prima
-            di usare le parti interessate.
+            Risale a quando una guida poteva essere salvata con rilievi aperti;
+            oggi non accade più. Completa la revisione per ottenere una nuova
+            versione verificata, senza riscrivere il testo.
           </p>
           <ul className="mt-2 list-disc pl-5 space-y-1">
             {guide.quality_review.open_issues?.map((w: string, i: number) => (
               <li key={i}>{w}</li>
             ))}
           </ul>
+          {guideId &&
+            (reviewState === "started" ? (
+              <p className="mt-3">
+                Revisione avviata: segui l’avanzamento in AI Studio, nella scheda
+                Guida e sideboard. La nuova versione comparirà tra le guide
+                salvate.
+              </p>
+            ) : (
+              <button
+                className="btn-primary mt-3"
+                type="button"
+                disabled={reviewState === "starting"}
+                onClick={() => void completeReview()}
+              >
+                {reviewState === "starting"
+                  ? "Avvio della revisione…"
+                  : "Completa la revisione"}
+              </button>
+            ))}
+          {reviewError && (
+            <p className="mt-2 text-rose-200" role="alert">
+              {reviewError}
+            </p>
+          )}
         </div>
       )}
       {guide.quality_review?.status === "passed" && (
@@ -163,10 +232,9 @@ export function GuideReader({
           {estimate && (
             <details className="mt-3 text-sm">
               <summary className="cursor-pointer text-sky-300">
-                Copertura {estimate.coverage_pct}% · Formula e matchup
+                Copertura {estimate.coverage_pct}% · Matchup considerati
               </summary>
-              <p className="my-3">{estimate.formula}</p>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto mt-3">
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -199,16 +267,21 @@ export function GuideReader({
           )}
         </section>
       </div>
-      {guide.evidence && (
+      {guide.model_id && (
         <details className="panel text-sm text-slate-400">
           <summary className="cursor-pointer">
             Fonti, modello e data dell’analisi
           </summary>
-          <p className="mt-3">{guide.evidence}</p>
+          {estimate?.source && (
+            <p className="mt-3">
+              Metagame: {estimate.source}
+              {estimate.fetched_at && `, rilevato il ${day(estimate.fetched_at)}`}.
+            </p>
+          )}
           <p className="mt-2">
-            Modello: {guide.model_id} ·{" "}
+            Modello: {guide.model_id}
             {guide.generated_at &&
-              new Date(guide.generated_at).toLocaleString("it-IT")}
+              ` · ${new Date(guide.generated_at).toLocaleString("it-IT")}`}
           </p>
         </details>
       )}

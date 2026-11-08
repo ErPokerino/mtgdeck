@@ -14,13 +14,21 @@ const approvedGuide = {
   executive_summary: "Contenuto corretto dopo la revisione",
   generated_at: "2026-11-02T16:30:00Z",
   quality_review: { status: "passed", revision_count: 2 },
+  legality: {
+    status: "legal",
+    format_id: "modern",
+    issues: [],
+    checked_at: "2026-11-02T16:30:00Z",
+    catalog_synced_at: "2026-11-02T08:00:00Z",
+  },
   meta_estimate: {
     status: "available",
     weighted_winrate_pct: 52,
     coverage_pct: 50,
     uncovered_share_pct: 50,
+    // Older guides still carry the formula: the reader must not show it.
     formula: "Somma(quota × WR) / quote coperte",
-    note: "Stima teorica AI, non risultati di partite.",
+    note: "Stima del modello sul 50% del meta coperto, non risultati di partite.",
     rows: [
       { archetype: "Aggro", share_pct: 30, winrate_pct: 60 },
       { archetype: "Control", share_pct: 20, winrate_pct: 40 },
@@ -128,9 +136,53 @@ test("failed verification preserves draft; resume completes without generating a
     page.getByRole("heading", { name: approvedGuide.deck_name }),
   ).toBeVisible();
   await expect(page.getByText("52.0%", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Lista legale in MODERN/)).toBeVisible();
+  await expect(page.getByText(/Somma\(/)).toHaveCount(0);
   expect(starts).toBe(1);
   expect(resumes).toBe(1);
   await page.screenshot({ path: "../tmp/qa/guide-job-completed.png" });
+});
+
+test("archived guide with open issues completes its review from the same text", async ({
+  page,
+}) => {
+  const unfinished = {
+    ...approvedGuide,
+    deck_name: "Guida con rilievi aperti",
+    quality_review: {
+      status: "warnings",
+      open_issues: ["Correzione proposta ma non verificata: esempio"],
+    },
+    legality: {
+      status: "not_legal",
+      format_id: "modern",
+      issues: ["Mountain è bandita in Modern."],
+    },
+  };
+  let completes = 0;
+  await page.route(`**/api/decks/${deck.id}`, (route) =>
+    route.fulfill({ json: { ...deck, guide_json: unfinished } }),
+  );
+  await page.route("**/api/guides?**", (route) =>
+    route.fulfill({ json: [{ id: 77, deck_id: deck.id }] }),
+  );
+  await page.route("**/api/guides/77/complete-review", (route) => {
+    completes++;
+    return route.fulfill({ json: job(200) });
+  });
+  await page.route("**/api/ai/guide-jobs**", (route) =>
+    /\/guide-jobs\/\d+$/.test(new URL(route.request().url()).pathname)
+      ? route.fulfill({ json: job(200) })
+      : route.fulfill({ json: { jobs: [], legacy_drafts: [] } }),
+  );
+  await openGuide(page);
+  await expect(page.getByText("Mountain è bandita in Modern.")).toBeVisible();
+  await expect(page.getByText(/Lista legale in/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Completa la revisione" }).click();
+  await expect(
+    page.getByRole("region", { name: "Stato generazione guida" }),
+  ).toContainText("Revisione Oracle");
+  expect(completes).toBe(1);
 });
 
 test("running analysis survives reload and cancellation does not show an approved guide", async ({
@@ -246,14 +298,15 @@ test("explicit identical play/draw sidata displays the complete base plan", asyn
     .getByRole("button", { name: "On the play", exact: true })
     .click();
   await expect(reader.getByText(/Stessa sidata del piano base/)).toBeVisible();
+  // The sideboard matrix names the same card: the last button is the one in the plan.
   await expect(
-    reader.getByRole("button", { name: "Plains", exact: true }),
+    reader.getByRole("button", { name: "Plains", exact: true }).last(),
   ).toBeVisible();
   await reader
     .getByRole("button", { name: "On the draw", exact: true })
     .click();
   await expect(
-    reader.getByRole("button", { name: "Mountain", exact: true }),
+    reader.getByRole("button", { name: "Mountain", exact: true }).last(),
   ).toBeVisible();
   await expect(
     reader.getByText(/Questa versione non contiene una sidata distinta/),

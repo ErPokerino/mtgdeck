@@ -15,6 +15,7 @@ const PHASES: Record<AIJob["kind"], [string, string][]> = {
   matchup_spot: [
     ["context", "Preparazione delle liste"],
     ["analysis", "Analisi del matchup"],
+    ["repair", "Correzione dei piani di sideboard"],
     ["save", "Verifica e salvataggio"],
   ],
   deck_improvement: [

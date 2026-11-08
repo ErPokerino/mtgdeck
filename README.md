@@ -131,16 +131,20 @@ Per ogni matchup principale indica:
 
 L'analisi approfondita di un singolo matchup resta compito dell'Analisi matchup. Al posto del punteggio numerico c'è una posizione qualitativa nel campo. La stima ponderata è un'opinione del modello, perché nessuna fonte pubblica dati testa a testa.
 
-Le guide passano **bozza → controlli deterministici → revisione con correzioni → verifica dei passaggi modificati**. I controlli deterministici verificano:
+Le guide passano **bozza → controlli deterministici → revisione con correzioni → verifica dei passaggi modificati**, finché un passaggio si chiude senza nulla da correggere. I controlli deterministici verificano:
+- legalità della lista nel formato (ripetuta a ogni lettura ed export contro il catalogo corrente);
 - copie disponibili;
 - sidate bilanciate;
 - copertura dei matchup;
 - carte avversarie citate presenti nelle loro liste osservate;
-- mani tenute lanciabili con i colori delle terre in mano.
+- mani tenute con almeno 2 terre e lanciabili con i colori delle terre in mano;
+- somme di copie e forza/costituzione delle nostre carte citate nel testo.
+
+Copie delle voci carta, sidate identiche al piano base ed etichetta di difficoltà del matchup si correggono da sole, senza spendere un passaggio di revisione. Il modello riceve forza/costituzione e valore di mana di ogni faccia delle carte: non li deduce a memoria.
 
 Il revisore restituisce patch con riscontro esatto e fonte; ogni patch si applica da sola, quindi una malformata non scarta le altre. Il lettore e il PDF includono una matrice di sideboard carta × matchup.
 
-Ogni tentativo ha un **budget di 12 minuti**, timeout per chiamata e nessun retry HTTP automatico. Sono previsti al massimo tre passaggi di revisione o verifica, riducibili con `deck_guide.maxValidationRetries`. Una bozza completa **non viene più scartata**: se la revisione non si chiude (tempo, errore del provider, rilievi non risolti, correzioni non verificate), la guida viene pubblicata come "Pubblicata con punti da verificare", con l'elenco dei rilievi aperti nel lettore e nel PDF. La revisione AI riduce gli errori, ma non è una certificazione formale delle regole.
+**Una guida si pubblica solo a revisione conclusa**: ogni controllo deterministico superato, ogni correzione verificata da un passaggio successivo e nessun dubbio aperto. Ogni tentativo ha un **budget di 25 minuti**, timeout per chiamata, un nuovo tentativo automatico per ogni chiamata fallita e al massimo sei passaggi di revisione (`deck_guide.maxValidationRetries`). Se la revisione non si chiude nulla arriva in archivio: la bozza con le correzioni già fatte resta conservata e "Riprendi revisione" prosegue senza riscriverla. Una correzione senza fonte verificabile viene scartata dopo un tentativo di riparazione, perché non è un errore dimostrato. Le guide archiviate in passato con rilievi aperti mostrano il pulsante "Completa la revisione", che ne produce una nuova versione verificata. La revisione AI riduce gli errori, ma non è una certificazione formale delle regole.
 
 La generazione avviene nel server come lavoro persistente (`guide_jobs`): AI Studio mostra fase reale, tempo trascorso e annullamento. Puoi cambiare sezione o ricaricare la pagina. Una bozza completa viene conservata prima della revisione; dopo un errore o riavvio puoi riprendere soltanto i controlli, senza riscriverla. Una firma della lista e del modello impedisce di pubblicare una guida su una lista modificata nel frattempo. L’annullamento impedisce la pubblicazione; una chiamata al provider già in corso può terminare prima dell’arresto del lavoro. I tentativi duplicati vengono riuniti; sono ammesse al massimo due analisi contemporanee.
 

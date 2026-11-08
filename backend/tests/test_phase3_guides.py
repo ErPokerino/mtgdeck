@@ -1,5 +1,6 @@
 from copy import deepcopy
 
+import pytest
 from test_phase2_generation import cards, meta  # noqa: F401  (fixtures)
 
 from app.models import CardRuling, GuideVersion
@@ -68,18 +69,17 @@ def test_guide_receives_field_rulings_and_computed_facts(db, meta, guide_data, m
     assert db.query(GuideVersion).count() == 1
 
 
-def test_invented_opponent_card_is_published_as_open_issue(db, meta, guide_data, monkeypatch):
+def test_invented_opponent_card_blocks_publication(db, meta, guide_data, monkeypatch):
     guide = deepcopy(guide_data)
     guide["mulligan_examples"] = []
     guide["card_roles"] = []
     guide["sideboard_guide"] = [plan("Mono Red", ["Bolt", "Smash"]), plan("Green Stompy", ["Grizzly", "Tarmogoyf"])]
-    result, _ = run_guide(db, monkeypatch, guide)
-    review = result["guide"]["quality_review"]
-    assert review["status"] == "warnings"
-    assert any("Tarmogoyf" in issue for issue in review["open_issues"])
+    with pytest.raises(ValueError, match="Guida non salvata"):
+        run_guide(db, monkeypatch, guide)
+    assert db.query(GuideVersion).count() == 0
 
 
-def test_pdf_renders_matrix_key_cards_and_open_issues(guide_data):
+def test_pdf_renders_matrix_key_cards_and_the_open_issues_of_an_archived_guide(guide_data):
     from io import BytesIO
 
     from pypdf import PdfReader
@@ -149,9 +149,8 @@ def test_valid_patches_survive_a_malformed_one_in_the_same_pass(db, guide_data):
             return reviews.pop(0)
 
     plains = db.get(__import__("app.models", fromlist=["Card"]).Card, "Plains")
-    result, issues = review_guide(
+    result = review_guide(
         Provider(), "m", "sys", "user", "60x Plains [Basic Land]", [(plains, "main", 60)],
         [], {}, lambda _: None,
     )
     assert result.executive_summary == "Plains produce mana bianco."
-    assert issues == []

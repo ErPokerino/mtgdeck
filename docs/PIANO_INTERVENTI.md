@@ -308,7 +308,7 @@ Interventi fatti:
   - carte avversarie citate presenti nelle liste osservate dell'archetipo;
   - almeno 2 carte avversarie per ogni matchup principale;
   - mani tenute con terre e almeno una magia lanciabile con i colori di quelle terre.
-- **G-8, niente "tutto o niente".** La guida si pubblica con gli avvisi aperti ("Pubblicata con punti da verificare", nel lettore e nel PDF) quando la revisione non si chiude: timeout, errore del provider, rilievi non risolti, correzioni non verificate. Si fermano solo l'annullamento e la lista cambiata. Le correzioni del revisore si applicano una per una: una patch malformata non scarta più le altre.
+- **G-8, niente "tutto o niente".** *Superato il 2026-11-08, vedi sotto.* La guida si pubblicava con gli avvisi aperti quando la revisione non si chiudeva. Le correzioni del revisore si applicano una per una: una patch malformata non scarta più le altre.
 - **G-9, prompt v7.** Formato operativo denso, densità proporzionale alla quota, esempio di forma scritto internamente, schema allineato al prompt.
 - **G-10, lettore e PDF.** Matrice di sideboard carta × matchup (base, play e draw nel lettore), carte avversarie con risposta, ruoli, alternative, flex slot, avvisi aperti.
 
@@ -317,6 +317,15 @@ Interventi fatti:
 **Prove reali.** The Rock in Pioneer con Gemini Argon.
 - **Prima prova:** guida pubblicata con molti avvisi. Il revisore aveva trovato errori veri, per esempio "Overgrown Tomb e Unholy Annex infliggono danni" (in realtà fanno perdere punti vita) e "Culling Ritual distrugge Leyline", ma nessuna correzione veniva applicata. Le cause erano l'analisi assente tra le fonti del revisore e l'applicazione in blocco delle patch.
 - **Seconda prova, dopo la correzione:** 4 minuti e mezzo, 7 correzioni su 8 applicate e verificate in 2 cicli, stato "passed" senza avvisi. Circa 200 parole per matchup, 2-3 carte avversarie con soglie e risposta in ognuno degli 8 matchup.
+
+**Revisione del 2026-11-08 (decisione del proprietario: una guida generata deve avere ogni revisione conclusa e tutto verificato).**
+- **Pubblicazione solo a revisione conclusa.** G-8 è sostituito: nessuna guida con rilievi aperti arriva in archivio. Se un passaggio non si chiude, il job fallisce conservando la bozza corretta e si riprende senza riscriverla. La causa dell'avviso "Correzione proposta ma non verificata" era il limite di tre passaggi, che scartava le correzioni dell'ultimo: ora sono fino a sei, con un nuovo tentativo per ogni chiamata fallita e un budget di 25 minuti.
+- **Fatti nelle fonti.** Forza/costituzione e MV di ogni faccia non arrivavano al modello né al revisore: "The Dawning Archaic (5/5)" era scritto a memoria (Oracle: 7/7) e nessuno poteva correggerlo.
+- **Controlli nuovi.** Legalità della lista a ogni lettura ed export, somme di copie e forza/costituzione citate nel testo, mani da una sola terra non tenibili. Correzioni meccaniche senza passaggio a pagamento: copie delle voci carta, sidate uguali al piano base, etichetta di difficoltà.
+- **Guide archiviate.** "Completa la revisione" ne produce una nuova versione verificata dallo stesso testo.
+- **PDF e lettore.** Tolte formula, id dello snapshot, testo grezzo delle fonti e l'invito a verificare la legalità, sostituito dall'esito del controllo automatico. Matrice con intestazioni ruotate, titoli mai isolati a fondo pagina.
+- **Confronto matchup.** L'avversario da archetipo è la lista di consenso, non un campione arbitrario; il Bo3 deriva dalle stime di Game 1 e post-side; ruling nel contesto; un piano di sideboard sbilanciato viene riparato invece di perdere l'analisi.
+- **Generazione e miglioramento.** Delta allineati ai numeri reali della lista; una passata in più sulle verifiche rimaste aperte; colori del mazzo dalle magie e non dalle terre; avviso sui cambi fuori dalla manabase; legalità della lista migliorata.
 
 Restano aperti:
 - **Play/draw.** In tutti gli 8 matchup la sidata è rimasta identica al piano base, con note tattiche diverse. Il prompt ora chiede di valutare sempre una sidata diversa contro gli archetipi veloci; l'effetto non è ancora verificato con una nuova generazione.

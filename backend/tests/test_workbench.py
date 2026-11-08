@@ -331,7 +331,9 @@ def test_unchanged_save_keeps_current_guide(client, db, payload, guide_data):
     db.commit()
     result = client.put(f"/api/decks/{did}", json=payload)
     assert {
-        k: v for k, v in result.json()["guide_json"].items() if k != "rules_warnings"
+        k: v
+        for k, v in result.json()["guide_json"].items()
+        if k not in ("rules_warnings", "legality")
     } == guide_data
 
 
@@ -452,7 +454,7 @@ def test_pdf_embeds_hand_and_card_images(guide_data):
     assert any(page.get("/Resources", {}).get("/XObject") for page in reader.pages)
 
 
-def test_unresolved_review_issues_are_published_as_warnings(
+def test_unresolved_review_issues_block_publication(
     client, db, payload, guide_data, monkeypatch
 ):
     from app.skills.schemas import GuideReviewOutput
@@ -470,14 +472,10 @@ def test_unresolved_review_issues_are_published_as_warnings(
             return AIDeckGuideOutput(**guide_data)
 
     monkeypatch.setattr(runner, "get_active_ai_provider", lambda _: Provider())
-    result = runner.run_deck_guide_skill(
-        db, AIDeckGuideRequest(deck_id=did, format_id="modern")
-    )
-    review = result["guide"]["quality_review"]
-    assert review["status"] == "warnings"
-    assert review["open_issues"] == ["Revisione Oracle: Contradiction"]
-    assert db.query(GuideVersion).count() == 1
-    assert db.get(Deck, did).guide_json["quality_review"]["status"] == "warnings"
+    with pytest.raises(ValueError, match="Guida non salvata"):
+        runner.run_deck_guide_skill(db, AIDeckGuideRequest(deck_id=did, format_id="modern"))
+    assert db.query(GuideVersion).count() == 0
+    assert db.get(Deck, did).guide_json is None
 
 
 def test_guide_repairs_coverage_and_oracle_in_one_pass_before_saving(
@@ -519,6 +517,9 @@ def test_guide_repairs_coverage_and_oracle_in_one_pass_before_saving(
             cards_in=[],
             cards_out=[],
             estimate_rationale="Clock e risposte da testare",
+            opponent_key_cards=[
+                dict(card_name=c, why_it_matters="m", our_answer="a") for c in ("Carta A", "Carta B")
+            ],
         )
         for name, wr in [("Aggro", 60), ("Control", 40)]
     ]

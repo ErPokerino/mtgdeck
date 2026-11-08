@@ -1,13 +1,26 @@
 import copy
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Type, TypeVar
+
+import httpx
 from google import genai
+from google.genai import errors as genai_errors
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.routers.settings import get_app_setting
 
 T = TypeVar("T", bound=BaseModel)
+
+# A call without a deadline could hold one of the two job workers forever.
+DEFAULT_TIMEOUT_SECONDS = 600.0
+
+
+def is_transient_provider_error(exc: BaseException) -> bool:
+    """The provider did not answer in time or at all: worth another attempt."""
+    if isinstance(exc, (TimeoutError, httpx.HTTPError, genai_errors.APIError)):
+        return True
+    return isinstance(exc, RuntimeError) and "output vuoto" in str(exc)
 
 
 def dereference_json_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
@@ -108,10 +121,8 @@ class AIProvider(ABC):
                 "mime_type": "application/json",
                 "schema": clean_schema,
             },
-            **(
-                {"timeout": float(timeout_seconds)}
-                if timeout_seconds is not None
-                else {}
+            timeout=float(
+                DEFAULT_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
             ),
             **(
                 {

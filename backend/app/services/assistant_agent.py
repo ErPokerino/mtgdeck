@@ -35,7 +35,7 @@ from app.services.deck_validator import (
     resolve_card_by_name,
     validate_deck_entries,
 )
-from app.skills.deck_generation import analysis_text, oracle_text
+from app.skills.deck_generation import analysis_text, card_stats, oracle_text
 
 log = logging.getLogger("uvicorn.error")
 
@@ -317,7 +317,8 @@ APP_HELP_TOPICS: Dict[str, Dict[str, Any]] = {
                 "Genera una guida da torneo completa per il mazzo: tesi e posizionamento nel meta, magic numbers del formato, "
                 "analisi della manabase, ruoli delle singole carte, slot flessibili, 4 mani di mulligan commentate (inclusa trap hand), "
                 "e piani pre/post-sideboard completi (con differenze On the Play vs On the Draw) contro tutti i top archetipi. "
-                "Sottopone la bozza a verifica deterministica e revisione Oracle automatica, ed è esportabile in PDF illustrato."
+                "La bozza passa da controlli deterministici (legalità inclusa) e revisione Oracle: la guida si salva solo a "
+                "revisione conclusa, con ogni correzione verificata, ed è esportabile in PDF illustrato."
             ),
             "4. Confronta matchup (matchup_spot)": (
                 "Analisi chirurgica testa a testa tra due mazzi (o tra il tuo mazzo e un archetipo del meta): stabilisce chi è "
@@ -430,6 +431,7 @@ def _tool_get_deck_details(db: Session, args: Dict[str, Any]) -> Tuple[Dict[str,
             "mana_cost": c.mana_cost or "",
             "cmc": c.cmc,
             "type_line": c.type_line,
+            "stats": card_stats(c).strip(),
             "oracle_text": oracle_text(c),
         }
         if board == "main":
@@ -596,6 +598,7 @@ def _tool_get_archetype_details(
                     "is_core": c.inclusion_pct >= deck_engine.CORE_INCLUSION_PCT,
                     "mana_cost": c.card.mana_cost or "",
                     "type_line": c.card.type_line,
+                    "stats": card_stats(c.card).strip(),
                     "oracle_text": oracle_text(c.card),
                 }
                 for c in con.main
@@ -608,6 +611,7 @@ def _tool_get_archetype_details(
                     "avg_copies": c.avg_copies,
                     "mana_cost": c.card.mana_cost or "",
                     "type_line": c.card.type_line,
+                    "stats": card_stats(c.card).strip(),
                     "oracle_text": oracle_text(c.card),
                 }
                 for c in con.side

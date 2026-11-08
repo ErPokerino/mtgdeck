@@ -401,20 +401,20 @@ class AIMatchupSpotRequest(BaseModel):
 
 class GuideJSONPatch(BaseModel):
     path: str = Field(
-        description="JSON Pointer esistente, es. /card_roles/0/explanation"
+        description="JSON Pointer esistente, es. /card_roles/0/explanation. Per aggiungere un elemento a una lista usa il suffisso /- (es. /sideboard_guide/-) con original_json null"
     )
     original_json: str = Field(
         description="Valore originale JSON; per testi lunghi preferisci un frammento errato esatto e univoco, con virgolette JSON"
     )
     replacement_json: str = Field(
-        description="Valore corretto serializzato come JSON, dello stesso tipo"
+        description="Valore corretto serializzato come JSON, dello stesso tipo; null per eliminare un elemento di una lista"
     )
     reason: str = Field(
         description="Contraddizione letterale e correzione; non segnalare frasi che già esprimono il vincolo corretto"
     )
     source_quote: str = Field(
         default="",
-        description="Breve estratto esatto dell’Oracle o regola fornita; vuoto solo per errori di copie o struttura",
+        description="Breve estratto esatto dell’Oracle, della lista, dell’analisi o di un’altra sezione della guida che dimostra l’errore; vuoto solo per errori deterministici segnalati",
     )
 
 
@@ -425,7 +425,7 @@ class GuideReviewOutput(BaseModel):
     )
     unresolved_issues: List[str] = Field(
         default_factory=list,
-        description="Solo errori concreti non risolvibili con una patch; vuoto se nessuno",
+        description="Solo errori concreti che in questo passaggio non riesci a correggere con una patch; vuoto se nessuno. La guida non viene pubblicata finché resta un elemento qui",
     )
 
 

@@ -13,6 +13,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     Flowable,
@@ -32,6 +33,9 @@ MUTED = colors.HexColor("#607479")
 PALE = colors.HexColor("#f1f5f4")
 LINE = colors.HexColor("#d6e1de")
 GOLD = colors.HexColor("#ba9650")
+POSITIVE = colors.HexColor("#1f7a4d")
+NEGATIVE = colors.HexColor("#b3402e")
+ALERT_BACKGROUND = colors.HexColor("#fbeae7")
 WIDTH = 170 * mm
 
 
@@ -81,6 +85,45 @@ def pdf_text(value) -> str:
         for char, plain in ASCII_FALLBACK.items():
             text = text.replace(char, plain)
     return text
+
+
+def day_label(value):
+    """DD/MM/YYYY of a stored ISO timestamp, or None when it is absent or malformed."""
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).strftime("%d/%m/%Y")
+    except ValueError:
+        return None
+
+
+def legality_label(legality, fmt):
+    """The app's own check, in the reader's words; None for a guide that carries none."""
+    if legality.get("status") != "legal":
+        return None
+    checked = day_label(legality.get("checked_at"))
+    return f"Lista legale in {fmt.upper()}" + (f" · controllo automatico del {checked}" if checked else "")
+
+
+class VerticalLabel(Flowable):
+    """A rotated column header: long archetype names stay whole in a narrow column."""
+
+    FONT_SIZE = 7.5
+
+    def __init__(self, text, height):
+        super().__init__()
+        self.text, self.width, self.height = text, 3 * mm, height
+
+    def wrap(self, *_):
+        return self.width, self.height
+
+    def draw(self):
+        canvas = self.canv
+        canvas.saveState()
+        canvas.setFont(FONT, self.FONT_SIZE)
+        canvas.setFillColor(INK)
+        canvas.translate(self.width, 0)
+        canvas.rotate(90)
+        canvas.drawString(0, 0, self.text)
+        canvas.restoreState()
 
 
 class CardPicture(Flowable):
@@ -177,6 +220,12 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
             spaceAfter=4,
             textColor=INK,
         ),
+        "MatrixCell": dict(
+            fontName=FONT, fontSize=8.5, leading=11, alignment=TA_CENTER, textColor=INK
+        ),
+        "AlertTitle": dict(
+            fontName=FONT_BOLD, fontSize=11, leading=15, spaceAfter=4, textColor=NEGATIVE
+        ),
     }.items():
         styles.add(ParagraphStyle(name=label, **options))
     styles["BodyPro"].allowWidows = 0
@@ -193,6 +242,8 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
     styles["Heading2"].leading = 16
     styles["Heading2"].spaceBefore = 13
     styles["Heading2"].spaceAfter = 7
+    # A section title never stays alone at the bottom of a page.
+    styles["Heading2"].keepWithNext = 1
 
     def p(value, style="BodyPro"):
         return Paragraph(escape(pdf_text(value)).replace("\n", "<br/>"), styles[style])
@@ -254,6 +305,43 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         )
         story.append(table)
 
+    def matrix_table(plans, rows):
+        names = [pdf_text(plan.get("opponent_archetype", "")) for plan in plans]
+        height = max(stringWidth(n, FONT, VerticalLabel.FONT_SIZE) for n in names) + 3 * mm
+        column = max(9 * mm, min(16 * mm, (WIDTH - 48 * mm) / len(plans)))
+
+        def cell(value):
+            if not value:
+                return Paragraph(".", styles["MatrixCell"])
+            shade = "#" + (POSITIVE if value > 0 else NEGATIVE).hexval()[2:]
+            label = f"+{value}" if value > 0 else str(value)
+            return Paragraph(f'<font color="{shade}">{label}</font>', styles["MatrixCell"])
+
+        table = Table(
+            [[p("Carta", "SmallPro")] + [VerticalLabel(n, height) for n in names]]
+            + [
+                [p(name, "TablePro")] + [cell(row.get(i, 0)) for i in range(len(plans))]
+                for name, row in rows
+            ],
+            colWidths=[48 * mm] + [column] * len(plans),
+            repeatRows=1,
+            hAlign="LEFT",
+        )
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), PALE),
+                    ("VALIGN", (0, 0), (-1, 0), "BOTTOM"),
+                    ("VALIGN", (0, 1), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("LINEBELOW", (0, 0), (-1, -1), 0.35, LINE),
+                ]
+            )
+        )
+        story.append(table)
+
     counts = {
         board: sum(c["quantity"] for c in decklist if c["board"] == board)
         for board in ("main", "side", "companion")
@@ -267,6 +355,8 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         stamp = "Versione archiviata"
     estimate = guide.get("meta_estimate") or {}
     wr = estimate.get("weighted_winrate_pct")
+    legality = guide.get("legality") or {}
+    legal_line = legality_label(legality, fmt)
     story.extend(
         [
             p("AETHERDECK / COMPETITIVE PRIMER", "SmallPro"),
@@ -276,9 +366,36 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
                 f"{fmt.upper()} | {counts['main']} main / {counts['side']} side | {stamp}",
                 "SmallPro",
             ),
-            Spacer(1, 8 * mm),
         ]
     )
+    if legal_line:
+        story.append(p(legal_line, "SmallPro"))
+    if legality.get("status") == "not_legal":
+        story.extend(
+            [
+                Spacer(1, 3 * mm),
+                Table(
+                    [
+                        [
+                            [
+                                p(f"LISTA NON LEGALE IN {fmt.upper()}", "AlertTitle"),
+                                *[p(issue, "TablePro") for issue in legality.get("issues") or []],
+                            ]
+                        ]
+                    ],
+                    colWidths=[WIDTH],
+                    hAlign="LEFT",
+                    style=[
+                        ("BACKGROUND", (0, 0), (-1, -1), ALERT_BACKGROUND),
+                        ("BOX", (0, 0), (-1, -1), 0.6, NEGATIVE),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                        ("TOPPADDING", (0, 0), (-1, -1), 8),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ],
+                ),
+            ]
+        )
+    story.append(Spacer(1, 8 * mm))
     if guide.get("tier_assessment"):
         score = [
             p("POSIZIONE NEL CAMPO ATTESO", "StatLabel"),
@@ -328,13 +445,6 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
             ],
             [90 * mm, 35 * mm, 45 * mm],
         )
-    if estimate.get("source"):
-        story.append(
-            p(
-                f"Fonte: {estimate['source']} | Snapshot {estimate.get('snapshot_id', '-')}",
-                "SmallPro",
-            )
-        )
     if guide.get("rules_warnings"):
         story.append(
             p(
@@ -368,21 +478,20 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
             )
         )
 
-    source_notes = [p("FONTI E CONTESTO", "StatLabel")]
-    if guide.get("evidence"):
-        source_notes.append(p(guide["evidence"], "SmallPro"))
+    source_notes = [p("FONTI", "StatLabel")]
+    if legal_line and day_label(legality.get("catalog_synced_at")):
+        source_notes.append(
+            p(f"Catalogo e banlist Scryfall aggiornati al {day_label(legality['catalog_synced_at'])}.", "SmallPro")
+        )
+    if estimate.get("source"):
+        fetched = day_label(estimate.get("fetched_at"))
+        source_notes.append(
+            p(f"Metagame: {estimate['source']}" + (f", rilevato il {fetched}." if fetched else "."), "SmallPro")
+        )
     source_notes.append(
         p(f"Modello: {guide.get('model_id', 'non documentato')}", "SmallPro")
     )
     source_notes.append(p("Immagini delle carte: Scryfall.", "SmallPro"))
-    source_notes.append(
-        p(
-            estimate.get(
-                "formula", "Stima ponderata non disponibile per questa versione."
-            ),
-            "SmallPro",
-        )
-    )
     if estimate.get("missing_archetypes"):
         source_notes.append(
             p(
@@ -651,20 +760,8 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         story.append(
             p("Piano base: copie in entrata (+) e in uscita (-) per matchup.", "SmallPro")
         )
-        column = max(12 * mm, (WIDTH - 48 * mm) / len(plans))
-        data_table(
-            ["Carta"] + [plan.get("opponent_archetype", "") for plan in plans],
-            [
-                [name]
-                + [
-                    (f"+{v}" if v > 0 else str(v)) if (v := row.get(i, 0)) else "."
-                    for i in range(len(plans))
-                ]
-                for name, row in sorted(
-                    matrix.items(), key=lambda kv: (min(kv[1].values()), kv[0])
-                )
-            ],
-            [48 * mm] + [column] * len(plans),
+        matrix_table(
+            plans, sorted(matrix.items(), key=lambda kv: (min(kv[1].values()), kv[0]))
         )
 
     for plan in guide.get("sideboard_guide", []):
@@ -736,7 +833,14 @@ def render_guide_pdf(guide, name, fmt, decklist, card_images=None):
         canvas.drawString(
             20 * mm,
             12 * mm,
-            "AETHERDECK / Stime teoriche - verificare la legalità prima del torneo",
+            "AETHERDECK / "
+            + (
+                pdf_text(legal_line)
+                if legal_line
+                else f"Lista non legale in {fmt.upper()}: vedi la prima pagina"
+                if legality.get("status") == "not_legal"
+                else fmt.upper()
+            ),
         )
         canvas.drawRightString(190 * mm, 12 * mm, str(doc.page))
         if doc.page > 1:

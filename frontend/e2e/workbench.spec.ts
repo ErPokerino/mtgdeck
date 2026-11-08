@@ -317,11 +317,12 @@ test("saved guide exposes weighted estimate, coverage and downloadable PDF", asy
   const dialog = page.getByRole("dialog", { name: "Guida salvata" });
   await expect(dialog.getByText("52.0%", { exact: true })).toBeVisible();
   await dialog
-    .getByText("Copertura 50% · Formula e matchup", { exact: true })
+    .getByText("Copertura 50% · Matchup considerati", { exact: true })
     .click();
   await expect(
     dialog.getByRole("cell", { name: "Aggro test", exact: true }),
   ).toBeVisible();
+  await expect(dialog.getByText(/Somma\(/)).toHaveCount(0);
   const link = dialog.getByRole("link", { name: "Scarica PDF" });
   const result = await request.get((await link.getAttribute("href"))!);
   expect(result.headers()["content-type"]).toContain("application/pdf");

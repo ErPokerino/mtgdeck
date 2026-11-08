@@ -1,12 +1,14 @@
 ---
 skill: deck_guide
-version: v7.0.0
-updated_at: 2026-11-04
+version: v7.1.0
+updated_at: 2026-11-08
 ---
 Scrivi in ITALIANO una guida competitiva per la lista esatta fornita; nomi delle carte in INGLESE. Il lettore prepara un torneo: ogni frase deve aiutarlo a prendere una decisione. Niente retorica, superlativi o ripetizioni. Non copiare per esteso i testi Oracle.
 
 EVIDENZA E REGOLE
-- Testi Oracle, ruling ufficiali e legalità forniti sono fatti: ogni interazione che descrivi deve essere coerente con essi. Controlla tutte le facce delle carte, i costi, il valore di mana (CMC), i bersagli legali, il timing (stregoneria o istantaneo, attivazioni "only as a sorcery"), le zone e le condizioni.
+- Testi Oracle, ruling ufficiali, forza/costituzione e valore di mana (MV) forniti sono fatti: ogni interazione che descrivi deve essere coerente con essi. Controlla tutte le facce delle carte, i costi, i bersagli legali, il timing (stregoneria o istantaneo, attivazioni "only as a sorcery"), le zone e le condizioni. Non citare a memoria statistiche o testi: usa quelli forniti.
+- La legalità della lista è già verificata dall'app: non scrivere avvertenze su legalità o banlist.
+- I conti devono tornare: se scrivi un totale con il dettaglio tra parentesi, la somma deve coincidere, e lo stesso numero deve essere uguale in tutte le sezioni.
 - Nel testo Oracle il simbolo `¶` (o l'a capo) separa abilità distinte e indipendenti (CR 113.1c): una clausola come "Activate only if..." alla fine di un paragrafo si applica SOLO all'abilità in quello stesso paragrafo, mai alle abilità negli altri paragrafi della carta. Non confondere terre che entrano tappate su condizione ("enters tapped unless...") con terre che entrano sempre stappate ma hanno una seconda abilità di mana condizionale.
 - Verifica sempre che un counterspell o una rimozione possa bersagliare e neutralizzare/distruggere legalmente la carta citata (rispetta "can't be countered", vincoli di valore di mana o tipo, e ricorda che abilità attivate come Ninjutsu o Channel non sono magie).
 - Le quote, i profili e le liste di consenso degli avversari sono osservazioni della fonte. Cita SOLO carte avversarie che compaiono nel campo atteso, nelle liste di consenso o nei testi Oracle avversari forniti.
@@ -26,7 +28,7 @@ STRUTTURA
 - flex_slots: 2-4 slot flessibili con il trigger di meta per cambiarli ("se X cresce, A al posto di B").
 - synergies (3-5): linee precise con vincoli Oracle e risposta avversaria.
 - early/mid/late_game_plan (max 70 parole ciascuno): decisioni concrete per fase.
-- mulligan_heuristics (max 100 parole) e 4 mulligan_examples con esattamente 7 carte reali del main. Includi: una mano il cui verdetto cambia secondo il matchup (dillo nel contesto), una "trap hand" da mandare in mulligan, una mano rischiosa motivata con le probabilità fornite. Una mano tenuta deve poter lanciare magie con i colori delle sue terre.
+- mulligan_heuristics (max 100 parole) e 4 mulligan_examples con esattamente 7 carte reali del main. Includi: una mano il cui verdetto cambia secondo il matchup (dillo nel contesto), una "trap hand" da mandare in mulligan, una mano rischiosa ma corretta motivata con le probabilità fornite. Una mano tenuta ha almeno 2 terre e deve poter lanciare magie con i colori delle sue terre; una mano da 1 terra è sempre mulligan.
 - strengths, weaknesses: 3 elementi ciascuno. tips_and_tricks: 5-8 consigli verificabili sui testi.
 - excluded_cards_and_donts: 3-4 alternative plausibili del formato, motivate rispetto al campo.
 
@@ -49,4 +51,4 @@ role_pre_side: "Siamo il control: il loro clock arriva prima del nostro vantaggi
 opponent_key_cards: [{"card_name": "Carta A", "why_it_matters": "3 danni istantanei: uccide i nostri drop da 2 ma non il finisher a costituzione 4", "our_answer": "teniamo il finisher per quando hanno speso le rimozioni; contro di lei non giochiamo due creature nello stesso turno"}, ...]
 gameplan_post_side: "Entrano due sweeper economici: aspettiamo che impegnino tre creature, intanto rimozioni solo sui portatori di vantaggio. Loro portano dentro scarto: lanciamo le minacce appena possibile invece di tenerle in mano."
 
-Prima della consegna verifica internamente vincoli, conteggi e conseguenze strategiche. Correggi le affermazioni sbagliate; non aggiungere sezioni di avvertimenti o auto-revisione. Non proclamarti un giocatore reale né attribuire risultati mai ottenuti.
+Scrivi tutto in italiano tranne i nomi delle carte e i termini tecnici di gioco. Prima della consegna verifica internamente vincoli, conteggi e conseguenze strategiche. Correggi le affermazioni sbagliate; non aggiungere sezioni di avvertimenti o auto-revisione. Non proclamarti un giocatore reale né attribuire risultati mai ottenuti.

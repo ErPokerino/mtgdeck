@@ -988,10 +988,11 @@ export function AIStudioView({
               )}
             </fieldset>
             <p className="text-sm text-slate-400">
-              Tempo massimo per tentativo: 5 minuti. La bozza viene conservata e
-              puoi riprenderne la revisione. Ogni versione approvata si trova in
-              Mazzi e guide, con lista esatta e fonti. Il winrate ponderato usa
-              le quote del metagame disponibile.
+              La guida si salva solo a revisione conclusa, con lista legale e
+              ogni correzione verificata. Di solito bastano pochi minuti; se il
+              tempo non basta la bozza viene conservata e puoi riprenderne la
+              revisione. Ogni versione approvata si trova in Mazzi e guide. Il
+              winrate ponderato usa le quote del metagame disponibile.
             </p>
             {runButton(
               guideBusy,
@@ -1055,7 +1056,18 @@ export function AIStudioView({
             </div>
           )}
           {guide && (
-            <GuideReader guide={guide} guideId={guideId} onInspect={inspect} />
+            <GuideReader
+              guide={guide}
+              guideId={guideId}
+              onInspect={inspect}
+              onReviewStarted={(job) => {
+                ++jobListRequest.current;
+                ++guideRequest.current;
+                setGuide(null);
+                setGuideId(undefined);
+                setGuideJob(job);
+              }}
+            />
           )}
         </div>
       )}

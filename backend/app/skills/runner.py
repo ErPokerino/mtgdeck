@@ -27,6 +27,7 @@ from app.services.guide_quality import (
     validate_swaps,
     weighted_meta_estimate,
     evidence_context,
+    legality_report,
     require_fresh_catalog,
 )
 from app.skills.schemas import (
@@ -44,6 +45,7 @@ from app.skills.common import load_skill_prompt
 from app.skills.deck_generation import (
     analysis_text,
     card_line,
+    card_stats,
     consensus_block,
     field_text_block,
     oracle_text,
@@ -89,15 +91,19 @@ GUIDE_OPPONENT_CARDS = 100
 RULINGS_PER_CARD = 4
 
 
+def _rulings_text(db: Session, entries) -> str:
+    rulings = rulings_for(db, [c.oracle_id for c, _, _ in entries])
+    lines = []
+    for card, _, _ in entries:
+        for r in (rulings.get(card.oracle_id) or [])[-RULINGS_PER_CARD:]:
+            lines.append(f"- {card.name}: {r.get('comment')}")
+    return "\n".join(dict.fromkeys(lines))
+
+
 def _guide_context(db: Session, snapshot, entries) -> Dict[str, Any]:
     """Observed facts for every main matchup plus app-computed facts on our list."""
     analysis = deck_engine.analyze_list(db, entries)
-    rulings = rulings_for(db, [c.oracle_id for c, _, _ in entries])
-    ruling_lines = []
-    for card, _, _ in entries:
-        for r in (rulings.get(card.oracle_id) or [])[-RULINGS_PER_CARD:]:
-            ruling_lines.append(f"- {card.name}: {r.get('comment')}")
-    ruling_text = "\n".join(dict.fromkeys(ruling_lines))
+    ruling_text = _rulings_text(db, entries)
     if not snapshot:
         return {
             "archetypes": [],
@@ -158,7 +164,10 @@ def _format_entries_with_oracle(entries: List[Tuple[Card, str, int]]) -> str:
                 )
 
             probabilities = f" | P(almeno 1 copia): iniziali 7={at_least_one(7):.1f}%, viste 9={at_least_one(9):.1f}%, viste 10={at_least_one(10):.1f}%. Senza mulligan, cantrip o selezione; non è probabilità di lancio."
-        line = f"{qty}x {c.name} ({c.mana_cost or 'Land'}) [{c.type_line}] — {oracle_text(c)}{probabilities}"
+        facts = card_stats(c)
+        if not deck_engine.is_land_card(c):
+            facts += f" MV {float(c.cmc or 0):g}"
+        line = f"{qty}x {c.name} ({c.mana_cost or 'Land'}) [{c.type_line}]{facts} — {oracle_text(c)}{probabilities}"
         if board == "main":
             main_lines.append(line)
         else:
@@ -343,28 +352,29 @@ MATCHUP OBBLIGATORI (usa questi nomi esatti): {", ".join(a.name for a in archs) 
         trace,
         phase,
         trace.get("resume_draft"),
-        max_reviews=min(3, 1 + max(0, skill_cfg["max_retries"])),
+        max_reviews=1 + max(0, skill_cfg["max_retries"]),
         known_opponent_cards=ctx["known_cards"],
     )
-    guide_out, open_issues = guide_out
     attempts = trace["attempts"]
     phase("weighted_estimate")
     guide = guide_out.model_dump()
     guide["meta_estimate"] = weighted_meta_estimate(guide, archs, latest_snap)
-    guide["evidence"] = evidence_context(db, fmt, latest_snap)
+    guide["legality"] = legality_report(db, fmt, entries)
     guide["deck_name"] = deck_title
     guide["format_id"] = fmt
     guide["model_id"] = skill_cfg["model_id"]
     guide["generated_at"] = utcnow().isoformat()
     guide["quality_review"] = {
-        "status": "warnings" if open_issues else "passed",
-        "open_issues": list(dict.fromkeys(open_issues)),
+        "status": "passed",
+        "open_issues": [],
         "revision_count": attempts - 1,
         "checked_at": guide["generated_at"],
         "checks": [
+            "Legalità della lista nel formato",
             "Copie, mani tenute lanciabili e sidate",
+            "Conteggi e forza/costituzione citati nel testo",
             "Copertura dei matchup e carte avversarie osservate",
-            "Revisione Oracle e ruling",
+            "Revisione Oracle e ruling, con verifica di ogni correzione",
         ],
     }
     snapshot = [
@@ -431,6 +441,37 @@ MATCHUP OBBLIGATORI (usa questi nomi esatti): {", ".join(a.name for a in archs) 
     return result
 
 
+def _archetype_entries(db: Session, archetype: MetaArchetype) -> List[Tuple[Card, str, int]]:
+    """The field's stock list stands for an archetype; a single sample list only as a fallback."""
+    consensus = deck_engine.consensus_list(db, archetype)
+    if consensus and sum(c.quantity for c in consensus.main) >= 60:
+        return consensus.entries()
+    if archetype.sample_decklists:
+        entries, _ = parse_decklist_text(db, archetype.sample_decklists[0].get("decklist_text", ""))
+        return entries
+    return []
+
+
+def bo3_winrate(game1_pct: float, postboard_pct: float) -> float:
+    """Match win probability from Game 1 and post-board estimates: W-W, W-L-W, L-W-W."""
+    g1, post = game1_pct / 100, postboard_pct / 100
+    return round(100 * (g1 * post + g1 * (1 - post) * post + (1 - g1) * post * post), 1)
+
+
+def _deck_colors(entries: List[Tuple[Card, str, int]]) -> List[str]:
+    """Colours the spells ask for. Lands say what the deck can pay, not what it plays: a
+    five-colour utility land must not turn a two-colour deck into a five-colour one."""
+    colors = {
+        col
+        for card, _, _ in entries
+        if not deck_engine.is_land_card(card)
+        for col in (card.colors or card.color_identity or [])
+    }
+    if not colors:
+        colors = {col for card, _, _ in entries for col in (card.produced_mana or [])}
+    return [c for c in deck_engine.WUBRG if c in colors]
+
+
 def run_matchup_spot_skill(
     db: Session,
     req: AIMatchupSpotRequest,
@@ -469,10 +510,7 @@ def run_matchup_spot_skill(
             raise ValueError("Archetipo avversario di un formato diverso.")
         if arch_b:
             deck_b_name = arch_b.name
-            if arch_b.sample_decklists:
-                entries_b, _ = parse_decklist_text(
-                    db, arch_b.sample_decklists[0].get("decklist_text", "")
-                )
+            entries_b = _archetype_entries(db, arch_b)
     if not entries_b:
         deck_b_obj, entries_b = _resolve_deck_entries_for_ai(
             db, req.deck_b_id, req.deck_b_text
@@ -505,24 +543,46 @@ ANALISI MATCHUP SPOT TESTA A TESTA ({fmt.upper()}):
 
 === MAZZO B (AVVERSARIO: {deck_b_name}) ===
 {_format_entries_with_oracle(entries_b)}
+
+=== RULING UFFICIALI DELLE CARTE (Scryfall) ===
+{_rulings_text(db, entries_a + entries_b) or "nessuno"}
 """.strip()
 
     step("analysis")
-    matchup_out: AIMatchupSpotOutput = provider.generate_structured(
-        model_id=skill_cfg["model_id"],
-        system_instruction=sys_prompt,
-        user_prompt=user_prompt,
-        response_model=AIMatchupSpotOutput,
+    # A paid analysis is not thrown away for an unbalanced sideboard plan: it gets repaired.
+    prompt = user_prompt
+    max_attempts = 1 + max(0, skill_cfg["max_retries"])
+    for attempt in range(max_attempts):
+        matchup_out: AIMatchupSpotOutput = provider.generate_structured(
+            model_id=skill_cfg["model_id"],
+            system_instruction=sys_prompt,
+            user_prompt=prompt,
+            response_model=AIMatchupSpotOutput,
+        )
+        errors = [
+            f"Mazzo A: {e}"
+            for e in validate_swaps(matchup_out.sideboard_plan_for_deck_a.model_dump(), entries_a)
+        ] + [
+            f"Mazzo B: {e}"
+            for e in validate_swaps(matchup_out.sideboard_plan_for_deck_b.model_dump(), entries_b)
+        ]
+        if not errors:
+            break
+        if attempt == max_attempts - 1:
+            raise ValueError("Analisi non salvata: " + "; ".join(errors))
+        step("repair")
+        prompt = (
+            user_prompt
+            + "\n\nCORREGGI QUESTI ERRORI DEI PIANI DI SIDEBOARD (IN dalla side, OUT dal main, bilanciati):\n"
+            + "\n".join(f"- {e}" for e in errors)
+            + "\n\nANALISI PRECEDENTE (JSON):\n"
+            + matchup_out.model_dump_json()
+        )
+    # The Bo3 figure follows from the two game estimates: it cannot contradict them.
+    matchup_out.overall_expected_winrate_deck_a_pct = bo3_winrate(
+        matchup_out.expected_winrate_deck_a_pre_side_pct,
+        matchup_out.expected_winrate_deck_a_post_side_pct,
     )
-
-    errors = validate_swaps(
-        matchup_out.sideboard_plan_for_deck_a.model_dump(), entries_a
-    )
-    errors += validate_swaps(
-        matchup_out.sideboard_plan_for_deck_b.model_dump(), entries_b
-    )
-    if errors:
-        raise ValueError("Analisi non salvata: " + "; ".join(errors))
     step("save")
     duration_ms = int((time.time() - start_ts) * 1000)
     ai_run = AIRun(
@@ -532,7 +592,7 @@ ANALISI MATCHUP SPOT TESTA A TESTA ({fmt.upper()}):
         provider=provider.provider_name,
         usage_json=dict(getattr(provider, "usage", None) or {}) or None,
         format_id=fmt,
-        validation_attempts=1,
+        validation_attempts=attempt + 1,
         duration_ms=duration_ms,
         input_summary={"deck_a": deck_a_name, "deck_b": deck_b_name, "format_id": fmt},
         output_json=matchup_out.model_dump(),
@@ -561,12 +621,7 @@ def _improvement_candidate_pool(
 ) -> str:
     """Legal spells and lands observed in the format and castable with the deck's colours."""
     leg_col = getattr(Card, f"legality_{fmt}")
-    deck_colors = {
-        c
-        for card, _, _ in entries
-        for c in (card.colors or card.produced_mana or [])
-        if c in deck_engine.WUBRG
-    }
+    deck_colors = set(_deck_colors(entries))
     in_deck = {card.oracle_id for card, _, _ in entries}
     stats = (
         {
@@ -634,6 +689,12 @@ def _validate_and_apply_improvement_swaps(
 
     working: Dict[Tuple[str, str], Tuple[Card, int]] = dict(board_map)
     valid_swaps = []
+    payable_colors = {
+        col
+        for card, board, _ in entries
+        if board == "main" and deck_engine.land_face(card)
+        for col in (card.produced_mana or [])
+    }
 
     for swap in output.suggested_swaps:
         board = swap.board
@@ -695,6 +756,11 @@ def _validate_and_apply_improvement_swaps(
         swap.card_out = card_out_obj.name
         swap.card_in = card_in_obj.name
         valid_swaps.append(swap)
+        if not castable_with_colors(card_in_obj, payable_colors):
+            warnings.append(
+                f"{card_in_obj.name} ({card_in_obj.mana_cost}) chiede colori che le terre del mazzo non "
+                "producono: serve un intervento anche sulla manabase."
+            )
 
     valid_candidates = []
     for cand in output.candidate_cards:
@@ -842,6 +908,10 @@ ANALISI PUNTI DEBOLI E MIGLIORAMENTO MAZZO:
 
     assert improvement_out is not None
     step("after_metrics")
+    after_report = validate_deck_entries(fmt, improved_entries)
+    warnings.extend(
+        f"Lista migliorata: {i.message}" for i in after_report.issues if i.severity == "error"
+    )
     after_analysis = deck_engine.analyze_list(db, improved_entries)
     after_structure = deck_engine.structure_summary(
         db, improved_entries, fmt, improvement_out.archetype or requested_arch
@@ -864,22 +934,8 @@ ANALISI PUNTI DEBOLI E MIGLIORAMENTO MAZZO:
             for c, b, q in ent_list
         ]
 
-    improved_colors = sorted(
-        {
-            col
-            for c, _, _ in improved_entries
-            for col in (c.colors or c.produced_mana or [])
-            if col in deck_engine.WUBRG
-        }
-    )
-    source_colors = sorted(
-        {
-            col
-            for c, _, _ in entries
-            for col in (c.colors or c.produced_mana or [])
-            if col in deck_engine.WUBRG
-        }
-    )
+    improved_colors = _deck_colors(improved_entries)
+    source_colors = _deck_colors(entries)
 
     result_payload = {
         "improvement": improvement_out.model_dump(),

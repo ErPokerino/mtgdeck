@@ -131,7 +131,7 @@ def test_review_guide_accepts_short_mana_ability_quotes_with_word_boundaries(
     oracle_source = (
         "4x Dual Verge (Land) [Land] — {T}: Add {U}. ¶ {T}: Add {B}. Activate only if you control an Island or a Swamp."
     )
-    result, issues = review_guide(
+    result = review_guide(
         Provider(),
         "m",
         "sys",
@@ -143,7 +143,6 @@ def test_review_guide_accepts_short_mana_ability_quotes_with_word_boundaries(
         lambda _: None,
     )
     assert "produce sempre {U} al turno 1" in result.manabase_and_probability_analysis
-    assert issues == []
 
 
 def test_deck_improvement_repairs_invalid_swaps_and_computes_before_after_metrics(

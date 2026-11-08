@@ -6,8 +6,6 @@ import logging
 import threading
 import time
 
-import httpx
-from google.genai import errors as genai_errors
 from pydantic import ValidationError
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta, timezone
@@ -15,18 +13,18 @@ from datetime import timedelta, timezone
 from app.database import SessionLocal
 from app.models import AIRun, Deck, DeckCard, GuideJob, GuideVersion, utcnow
 from app.skills.schemas import AIDeckGuideRequest
-from app.services.ai_provider import get_skill_model_and_config
-from app.services.guide_pipeline import GUIDE_BUDGET_SECONDS
+from app.services.ai_provider import (
+    get_skill_model_and_config,
+    is_transient_provider_error as _is_provider_failure,
+)
+from app.services.guide_pipeline import GUIDE_BUDGET_SECONDS, REVIEW_NOT_CONCLUDED
+
+# Once the review has closed, only local work is left: it must not time out a verified guide.
+_AFTER_REVIEW_PHASES = ("weighted_estimate", "ready_to_save", "save")
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="guide")
 _lock = threading.Lock()
 _workers = set()
-
-
-def _is_provider_failure(exc: BaseException) -> bool:
-    if isinstance(exc, (TimeoutError, httpx.HTTPError, genai_errors.APIError)):
-        return True
-    return isinstance(exc, RuntimeError) and "output vuoto" in str(exc)
 
 
 def public_job(job):
@@ -94,7 +92,7 @@ def legacy_drafts(db, fmt):
     return results
 
 
-def create_job(db, req, resume_id=None, legacy_run_id=None):
+def create_job(db, req, resume_id=None, legacy_run_id=None, draft=None):
     if req.deck_id:
         deck = db.get(Deck, req.deck_id)
         if not deck or deck.format_id != req.format_id:
@@ -106,7 +104,7 @@ def create_job(db, req, resume_id=None, legacy_run_id=None):
             ]
         }
     )
-    draft, signature = None, None
+    signature = None
     if resume_id:
         source = db.get(GuideJob, resume_id)
         if (
@@ -188,7 +186,10 @@ def _work(job_id):
                 status_db.commit()
                 if cancelled:
                     raise ValueError("Generazione annullata.")
-                if time.monotonic() - started >= GUIDE_BUDGET_SECONDS:
+                if (
+                    trace["phase"] not in _AFTER_REVIEW_PHASES
+                    and time.monotonic() - started >= GUIDE_BUDGET_SECONDS
+                ):
                     raise TimeoutError("Tempo massimo della guida raggiunto")
                 if trace["phase"] == "ready_to_save" and req.deck_id:
                     deck = status_db.get(Deck, req.deck_id)
@@ -233,8 +234,15 @@ def _work(job_id):
                 if isinstance(exc, ValidationError):
                     job.error = "Il provider ha restituito una risposta incompleta. La bozza già ricevuta resta disponibile per un nuovo tentativo di revisione."
                 elif isinstance(exc, ValueError) and str(exc).startswith(
+                    REVIEW_NOT_CONCLUDED
+                ):
+                    detail = str(exc).removeprefix(REVIEW_NOT_CONCLUDED).strip()
+                    job.error = (
+                        f"La revisione non si è conclusa ({detail}): la guida non è stata "
+                        "pubblicata. Riprendi la revisione della bozza senza rigenerare il testo."
+                    )
+                elif isinstance(exc, ValueError) and str(exc).startswith(
                     (
-                        "Guida non salvata:",
                         "La lista",
                         "Il mazzo",
                         "Sincronizza",
@@ -243,11 +251,7 @@ def _work(job_id):
                         "Generazione annullata",
                     )
                 ):
-                    job.error = (
-                        "La verifica non è stata completata. Riprendi la revisione della bozza senza rigenerare il testo."
-                        if str(exc).startswith("Guida non salvata:")
-                        else str(exc)
-                    )
+                    job.error = str(exc)
                 elif _is_provider_failure(exc):
                     job.error = "Il provider non ha completato la risposta nel tempo disponibile. Puoi riprovare dalla bozza, se già ricevuta."
                 else:

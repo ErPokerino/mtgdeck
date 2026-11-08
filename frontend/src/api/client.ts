@@ -209,6 +209,8 @@ export const api = {
     apiFetch<any>(`/api/ai/guide-jobs/${id}/cancel`, { method: "POST" }),
   resumeGuideJob: (id: number) =>
     apiFetch<any>(`/api/ai/guide-jobs/${id}/resume`, { method: "POST" }),
+  completeGuideReview: (guideId: number) =>
+    apiFetch<any>(`/api/guides/${guideId}/complete-review`, { method: "POST" }),
 
   analyzeSpotMatchupAI: (payload: {
     format_id: FormatId;

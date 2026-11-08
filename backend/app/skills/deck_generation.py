@@ -65,22 +65,31 @@ def _format_oracle_paragraphs(raw: str) -> str:
     return " ¶ ".join(p for p in paragraphs if p)
 
 
+def _stats(source: dict) -> str:
+    if source.get("power") is not None and source.get("toughness") is not None:
+        return f" {source['power']}/{source['toughness']}"
+    return f" fedeltà {source['loyalty']}" if source.get("loyalty") else ""
+
+
+def card_stats(card: Card) -> str:
+    """Power/toughness or loyalty of a single-faced card; faces carry their own in oracle_text."""
+    if len(card.card_faces or []) > 1:
+        return ""
+    return _stats({"power": card.power, "toughness": card.toughness, "loyalty": card.loyalty})
+
+
 def oracle_text(card: Card) -> str:
     faces = card.card_faces or []
     if len(faces) > 1:
         return " // ".join(
-            f"{f.get('name')} {f.get('mana_cost') or ''} ({f.get('type_line') or ''}): {_format_oracle_paragraphs(f.get('oracle_text') or '')}"
+            f"{f.get('name')} {f.get('mana_cost') or ''} ({f.get('type_line') or ''}){_stats(f)}: {_format_oracle_paragraphs(f.get('oracle_text') or '')}"
             for f in faces
         )
     return _format_oracle_paragraphs(card.oracle_text or "")
 
 
 def card_line(card: Card, stat: Optional[MetaCardStat] = None, prefix: str = "") -> str:
-    stats = ""
-    if card.power is not None and card.toughness is not None:
-        stats += f" {card.power}/{card.toughness}"
-    if card.loyalty:
-        stats += f" fedeltà {card.loyalty}"
+    stats = card_stats(card)
     badge = ""
     if stat:
         badge = (
@@ -200,7 +209,7 @@ def consensus_block(con: deck_engine.Consensus, with_oracle: bool, role: str = "
             tag = "CORE" if label == "MAIN" and c.inclusion_pct >= deck_engine.CORE_INCLUSION_PCT else "flex"
             info = f"{c.quantity} {c.card.name} [{tag}: {c.inclusion_pct:g}% liste, media {c.avg_copies:g} copie]"
             lines.append(
-                f"  {info} | {c.card.mana_cost or '—'} | {c.card.type_line} | {oracle_text(c.card)}"
+                f"  {info} | {c.card.mana_cost or '—'} | {c.card.type_line}{card_stats(c.card)} | {oracle_text(c.card)}"
                 if with_oracle
                 else f"  {info}"
             )
@@ -555,6 +564,35 @@ def resolve_entries(db: Session, out: AIDeckGenerationOutput) -> List[Tuple[Card
     return list(merged.values())
 
 
+def align_deltas(
+    out: AIDeckGenerationOutput,
+    entries: List[Tuple[Card, str, int]],
+    ctx: GenerationContext,
+) -> None:
+    """A delta's reason is the model's; its number is a fact of the list. Wrong counts are
+    corrected and deltas of unchanged cards dropped, so only missing reasons stay open."""
+    if not ctx.consensus:
+        return
+    stock: Counter = Counter()
+    for board, rows in (("main", ctx.consensus.main), ("side", ctx.consensus.side)):
+        for c in rows:
+            stock[(key(c.card.name), board)] += c.quantity
+    final: Counter = Counter()
+    for card, board, qty in entries:
+        final[(key(card.name), board)] += qty
+    seen: Set[Tuple[str, str]] = set()
+    kept = []
+    for delta in out.deltas:
+        k = (key(delta.card_name), delta.board)
+        diff = final[k] - stock[k]
+        if diff == 0 or k in seen:
+            continue
+        seen.add(k)
+        delta.change = diff
+        kept.append(delta)
+    out.deltas = kept
+
+
 def plan_issues(
     out: AIDeckGenerationOutput,
     entries: List[Tuple[Card, str, int]],
@@ -565,10 +603,10 @@ def plan_issues(
     if ctx.consensus:
         names: Dict[str, str] = {}
         stock: Counter = Counter()
-        for c in ctx.consensus.main + ctx.consensus.side:
-            k = (key(c.card.name), "main" if c in ctx.consensus.main else "side")
-            stock[k] += c.quantity
-            names[k[0]] = c.card.name
+        for board, rows in (("main", ctx.consensus.main), ("side", ctx.consensus.side)):
+            for c in rows:
+                stock[(key(c.card.name), board)] += c.quantity
+                names[key(c.card.name)] = c.card.name
         final: Counter = Counter()
         for card, board, qty in entries:
             final[(key(card.name), board)] += qty
@@ -609,7 +647,10 @@ def _list_with_oracle(entries: List[Tuple[Card, str, int]]) -> str:
     for board, label in (("main", "MAIN"), ("side", "SIDE")):
         rows = [(c, q) for c, b, q in entries if b == board]
         out.append(f"{label} ({sum(q for _, q in rows)}):")
-        out.extend(f"  {q} {c.name} | {c.mana_cost or '—'} | {c.type_line} | {oracle_text(c)}" for c, q in rows)
+        out.extend(
+            f"  {q} {c.name} | {c.mana_cost or '—'} | {c.type_line}{card_stats(c)} | {oracle_text(c)}"
+            for c, q in rows
+        )
     return "\n".join(out)
 
 
@@ -721,6 +762,7 @@ def run_deck_generation_skill(
 
     def checks(out: AIDeckGenerationOutput):
         entries = resolve_entries(db, out)
+        align_deltas(out, entries, ctx)
         analysis = deck_engine.analyze_list(db, entries, key_cards=req.build_around_cards)
         structure, role = structure_report(db, entries, ctx, requested)
         analysis["structure"] = structure
@@ -789,6 +831,23 @@ def run_deck_generation_skill(
                 out = revised
                 entries, analysis, issues = checks(out)
                 revision["applied"] = True
+                if issues:
+                    # The list is settled: one focused pass closes what the checks still report.
+                    step("revision")
+                    repaired, rev_errors = until_valid(
+                        ask(
+                            revision_sys,
+                            "=== VERIFICHE DETERMINISTICHE NON SUPERATE: CORREGGI SOLO QUESTE ===\n"
+                            + "\n".join("- " + i for i in issues)
+                            + f"\n\n=== PROPOSTA ATTUALE (JSON) ===\n{out.model_dump_json(indent=1)}\n\n"
+                            + base_prompt,
+                            AIDeckGenerationOutput,
+                        )
+                    )
+                    if not rev_errors:
+                        new_entries, new_analysis, new_issues = checks(repaired)
+                        if len(new_issues) < len(issues):
+                            out, entries, analysis, issues = repaired, new_entries, new_analysis, new_issues
         except Exception as exc:  # noqa: BLE001 - the previous list is valid and stays
             log.warning("deck_revision failed: %s", type(exc).__name__)
             revision["note"] = "Revisione non riuscita: resta la lista precedente."
@@ -814,7 +873,7 @@ def run_deck_generation_skill(
         deck = Deck(
             name=out.deck_name,
             format_id=fmt,
-            archetype=(ctx.base.category if ctx.base else out.archetype).lower(),
+            archetype=((ctx.base.category if ctx.base else None) or out.archetype or "midrange").lower(),
             colors=sorted_cols,
             color_label=col_label,
             description=out.strategy_overview,

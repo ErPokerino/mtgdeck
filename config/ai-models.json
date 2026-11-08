@@ -77,7 +77,7 @@
     "deck_guide": {
       "tier": "complex",
       "promptVersion": "v1",
-      "maxValidationRetries": 2
+      "maxValidationRetries": 5
     },
     "matchup_spot": {
       "tier": "complex",
