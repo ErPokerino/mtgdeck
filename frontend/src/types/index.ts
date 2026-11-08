@@ -337,7 +337,7 @@ export interface ConsensusListText {
 
 /** Expected cost of the next AI run, averaged over the latest real ones. */
 export interface RunEstimate {
-  skill: "deck_generation" | "deck_guide" | "matchup_spot";
+  skill: "deck_generation" | "deck_guide" | "matchup_spot" | "deck_improvement";
   model_id: string | null;
   runs: number;
   same_model?: boolean;
@@ -502,10 +502,10 @@ export interface DeckGenerationResult {
   };
 }
 
-/** Durable deck generation or matchup analysis running on the server. */
+/** Durable deck generation, improvement or matchup analysis running on the server. */
 export interface AIJob {
   id: number;
-  kind: "deck_generation" | "matchup_spot";
+  kind: "deck_generation" | "matchup_spot" | "deck_improvement";
   format_id: FormatId;
   label: string;
   model_id?: string;
@@ -515,4 +515,130 @@ export interface AIJob {
   created_at: string;
   updated_at: string;
   result: any;
+}
+
+export interface DeckWeaknessItem {
+  severity: "alta" | "media" | "bassa";
+  area:
+    | "manabase"
+    | "curva"
+    | "interazione"
+    | "minacce"
+    | "sinergie"
+    | "sideboard"
+    | "posizionamento_meta"
+    | string;
+  title: string;
+  finding: string;
+  affected_matchups: string[];
+  recommendation: string;
+}
+
+export interface DeckSwapSuggestion {
+  board: "main" | "side";
+  priority: "alta" | "media" | "opzionale";
+  card_out: string;
+  card_in: string;
+  quantity: number;
+  role: string;
+  reason_out: string;
+  reason_in: string;
+  matchups_improved: string[];
+  opportunity_cost: string;
+}
+
+export interface CandidateCardOption {
+  card_name: string;
+  board: "main" | "side";
+  suggested_copies: number;
+  replaces_candidates: string[];
+  role: string;
+  why_consider: string;
+  when_to_prefer: string;
+}
+
+export interface DeckImprovementOutput {
+  deck_name: string;
+  archetype: string;
+  verdict: "ottimizzato" | "migliorabile" | "da_ristrutturare";
+  overall_assessment: string;
+  manabase_diagnosis: string;
+  curve_and_interaction_diagnosis: string;
+  meta_positioning_diagnosis: string;
+  strengths_to_preserve: string[];
+  weaknesses: DeckWeaknessItem[];
+  suggested_swaps: DeckSwapSuggestion[];
+  candidate_cards: CandidateCardOption[];
+  sideboard_tuning_notes: string;
+}
+
+export interface ImprovedCardSlot {
+  oracle_id: string;
+  card_name: string;
+  board: "main" | "side" | "companion";
+  quantity: number;
+  mana_cost?: string;
+  cmc?: number;
+  type_line?: string;
+  image_uris?: Record<string, string>;
+  colors?: string[];
+}
+
+export interface DeckImprovementResult {
+  improvement: DeckImprovementOutput;
+  source_deck: {
+    id: number | null;
+    name: string;
+    format_id: FormatId;
+    archetype: string;
+    colors: string[];
+    cards: ImprovedCardSlot[];
+  };
+  improved_deck_preview: {
+    name: string;
+    format_id: FormatId;
+    archetype: string;
+    colors: string[];
+    cards: ImprovedCardSlot[];
+    exports: { arena: string; mtgo: string };
+  };
+  comparison: {
+    before_analysis: ListAnalysis;
+    after_analysis: ListAnalysis;
+    before_structure: ListStructure;
+    after_structure: ListStructure;
+  };
+  warnings: string[];
+  meta?: {
+    run_id: number;
+    skill: string;
+    prompt_version: string;
+    model_id: string;
+    provider: string;
+    duration_ms: number;
+  };
+}
+
+export interface AgentToolCallTrace {
+  id: string;
+  tool_name: string;
+  arguments: Record<string, any>;
+  summary: string;
+  status: "completed" | "error" | "running";
+}
+
+export interface AgentChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  tool_calls?: AgentToolCallTrace[];
+  model_id?: string;
+  duration_ms?: number;
+}
+
+export interface AgentChatResponse {
+  reply: string;
+  interaction_id?: string | null;
+  tool_calls: AgentToolCallTrace[];
+  model_id: string;
+  duration_ms: number;
 }

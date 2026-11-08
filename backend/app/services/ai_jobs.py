@@ -16,11 +16,16 @@ from app.database import SessionLocal
 from app.models import AIJob, utcnow
 from app.services.ai_provider import get_skill_model_and_config
 from app.services.guide_jobs import _is_provider_failure
-from app.skills.schemas import AIDeckGenerationRequest, AIMatchupSpotRequest
+from app.skills.schemas import (
+    AIDeckGenerationRequest,
+    AIDeckImprovementRequest,
+    AIMatchupSpotRequest,
+)
 
 KINDS = {
     "deck_generation": AIDeckGenerationRequest,
     "matchup_spot": AIMatchupSpotRequest,
+    "deck_improvement": AIDeckImprovementRequest,
 }
 MAX_ACTIVE = 2
 CANCELLED = "Generazione annullata."
@@ -38,6 +43,8 @@ def _stamp(value):
 def job_label(kind, request):
     if kind == "matchup_spot":
         return f"{request.get('deck_a_name')} contro {request.get('deck_b_name')}"
+    if kind == "deck_improvement":
+        return f"Migliora: {request.get('deck_name') or 'mazzo'}"
     colors = "".join(request.get("colors") or []) or "colori liberi"
     start = "consenso del meta" if request.get("base_archetype_id") else "brew"
     return f"{request.get('archetype') or 'mazzo'} · {colors} · {start}"
@@ -70,7 +77,7 @@ def recover_interrupted_jobs(db):
 def create_job(db, kind, req):
     if kind not in KINDS:
         raise ValueError("Tipo di analisi non supportato.")
-    skill = "deck_generation" if kind == "deck_generation" else "matchup_spot"
+    skill = kind
     req = req.model_copy(
         update={"model_id": get_skill_model_and_config(db, skill, req.model_id)["model_id"]}
     )
@@ -117,11 +124,12 @@ def _user_error(exc):
 
 def _work(job_id):
     from app.skills.deck_generation import run_deck_generation_skill
-    from app.skills.runner import run_matchup_spot_skill
+    from app.skills.runner import run_deck_improvement_skill, run_matchup_spot_skill
 
     runners = {
         "deck_generation": run_deck_generation_skill,
         "matchup_spot": run_matchup_spot_skill,
+        "deck_improvement": run_deck_improvement_skill,
     }
     try:
         with SessionLocal() as db:

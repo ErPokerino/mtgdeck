@@ -20,7 +20,7 @@ def quality_report(format_id: str, db: Session = Depends(get_db)):
 
 @router.get("/estimate")
 def cost_estimate(
-    skill: Literal["deck_generation", "deck_guide", "matchup_spot"],
+    skill: Literal["deck_generation", "deck_guide", "matchup_spot", "deck_improvement"],
     model_id: Optional[str] = None,
     db: Session = Depends(get_db),
 ):

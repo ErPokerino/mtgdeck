@@ -13,10 +13,14 @@ from app.models import (
     Card,
     Deck,
     MetaArchetype,
+    MetaCardStat,
 )
 from app.services.ai_provider import get_active_ai_provider, get_skill_model_and_config
 from app.services.deck_validator import (
+    castable_with_colors,
+    export_decklist_formats,
     parse_decklist_text,
+    resolve_card_by_name,
     validate_deck_entries,
 )
 from app.services.guide_quality import (
@@ -27,6 +31,8 @@ from app.services.guide_quality import (
 )
 from app.skills.schemas import (
     AIDeckGuideRequest,
+    AIDeckImprovementOutput,
+    AIDeckImprovementRequest,
     AIMatchupSpotOutput,
     AIMatchupSpotRequest,
 )
@@ -538,6 +544,398 @@ ANALISI MATCHUP SPOT TESTA A TESTA ({fmt.upper()}):
         "analysis": matchup_out,
         "meta": {
             "skill": "matchup_spot",
+            "prompt_version": prompt_ver,
+            "model_id": skill_cfg["model_id"],
+            "provider": provider.provider_name,
+            "duration_ms": duration_ms,
+        },
+    }
+
+
+
+def _improvement_candidate_pool(
+    db: Session,
+    fmt: str,
+    snapshot,
+    entries: List[Tuple[Card, str, int]],
+) -> str:
+    """Legal spells and lands observed in the format and castable with the deck's colours."""
+    leg_col = getattr(Card, f"legality_{fmt}")
+    deck_colors = {
+        c
+        for card, _, _ in entries
+        for c in (card.colors or card.produced_mana or [])
+        if c in deck_engine.WUBRG
+    }
+    in_deck = {card.oracle_id for card, _, _ in entries}
+    stats = (
+        {
+            s.oracle_id: s
+            for s in db.query(MetaCardStat).filter(MetaCardStat.snapshot_id == snapshot.id)
+            if s.oracle_id
+        }
+        if snapshot
+        else {}
+    )
+    observed = (
+        db.query(Card).filter(leg_col == "legal", Card.oracle_id.in_(list(stats))).all()
+        if stats
+        else db.query(Card).filter(leg_col == "legal").limit(200).all()
+    )
+    spells, lands = [], []
+    for c in observed:
+        if c.oracle_id in in_deck:
+            continue
+        if deck_engine.is_land_card(c):
+            if c.is_basic_land:
+                continue
+            produced = set(c.produced_mana or [])
+            if (
+                deck_colors
+                and produced
+                and not (produced & deck_colors)
+                and not (set(c.color_identity or []) <= deck_colors)
+            ):
+                continue
+            lands.append(c)
+        elif not deck_colors or castable_with_colors(c, deck_colors):
+            spells.append(c)
+    if stats:
+        spells.sort(key=lambda c: -stats[c.oracle_id].overall_presence_pct)
+        lands.sort(key=lambda c: -stats[c.oracle_id].overall_presence_pct)
+    spell_lines = [card_line(c, stats.get(c.oracle_id)) for c in spells[:120]]
+    land_lines = [card_line(c, stats.get(c.oracle_id)) for c in lands[:40]]
+    return (
+        f"=== POOL CARTE CANDIDATE LEGALI NEI COLORI DEL MAZZO ({len(spell_lines)} magie, {len(land_lines)} terre) ===\n"
+        + ("\n".join(spell_lines) or "Nessuna magia osservata.")
+        + "\n\nTerre candidate:\n"
+        + ("\n".join(land_lines) or "Nessuna terra osservata.")
+    )
+
+
+def _validate_and_apply_improvement_swaps(
+    db: Session,
+    fmt: str,
+    entries: List[Tuple[Card, str, int]],
+    output: AIDeckImprovementOutput,
+) -> Tuple[List[str], List[Tuple[Card, str, int]], List[str]]:
+    """Validate suggested_swaps and candidate_cards against the real deck and format catalog.
+    Returns (hard_errors, improved_entries, warnings)."""
+    errors: List[str] = []
+    warnings: List[str] = []
+    leg_col = f"legality_{fmt}"
+
+    board_map: Dict[Tuple[str, str], Tuple[Card, int]] = {}
+    for card, board, qty in entries:
+        b = "side" if board in ("side", "companion") else "main"
+        k = (b, key(card.name))
+        prev_card, prev_qty = board_map.get(k, (card, 0))
+        board_map[k] = (prev_card, prev_qty + qty)
+
+    working: Dict[Tuple[str, str], Tuple[Card, int]] = dict(board_map)
+    valid_swaps = []
+
+    for swap in output.suggested_swaps:
+        board = swap.board
+        out_k = (board, key(swap.card_out))
+        if out_k not in working or working[out_k][1] <= 0:
+            errors.append(
+                f"Swap non valido ({board}): '{swap.card_out}' non è presente nel {board}."
+            )
+            continue
+        card_out_obj, avail_qty = working[out_k]
+        if swap.quantity > avail_qty:
+            errors.append(
+                f"Swap non valido ({board}): chiedi di rimuovere {swap.quantity}x '{swap.card_out}', ma ne restano solo {avail_qty}x nel {board}."
+            )
+            continue
+        card_in_obj = resolve_card_by_name(db, swap.card_in)
+        if not card_in_obj:
+            errors.append(
+                f"Swap non valido ({board}): '{swap.card_in}' non esiste nel catalogo Scryfall."
+            )
+            continue
+        if getattr(card_in_obj, leg_col, "not_legal") != "legal":
+            errors.append(
+                f"Swap non valido ({board}): '{card_in_obj.name}' non è legale in {fmt.upper()}."
+            )
+            continue
+        if card_in_obj.oracle_id == card_out_obj.oracle_id:
+            errors.append(
+                f"Swap ridondante ({board}): '{swap.card_out}' e '{swap.card_in}' sono la stessa carta."
+            )
+            continue
+
+        # Check copy limit across main + side after applying this swap
+        in_k_main = ("main", key(card_in_obj.name))
+        in_k_side = ("side", key(card_in_obj.name))
+        current_total = (working.get(in_k_main, (card_in_obj, 0))[1]) + (
+            working.get(in_k_side, (card_in_obj, 0))[1]
+        )
+        max_copies = (
+            None if card_in_obj.is_basic_land else (card_in_obj.max_copies or 4)
+        )
+        if max_copies is not None and current_total + swap.quantity > max_copies:
+            errors.append(
+                f"Swap non valido ({board}): inserire {swap.quantity}x '{card_in_obj.name}' supererebbe il limite di {max_copies} copie totali (attuali: {current_total})."
+            )
+            continue
+
+        # Apply swap to working copy
+        new_out_qty = avail_qty - swap.quantity
+        if new_out_qty > 0:
+            working[out_k] = (card_out_obj, new_out_qty)
+        else:
+            del working[out_k]
+
+        in_k = (board, key(card_in_obj.name))
+        _, prev_in_qty = working.get(in_k, (card_in_obj, 0))
+        working[in_k] = (card_in_obj, prev_in_qty + swap.quantity)
+
+        swap.card_out = card_out_obj.name
+        swap.card_in = card_in_obj.name
+        valid_swaps.append(swap)
+
+    valid_candidates = []
+    for cand in output.candidate_cards:
+        c_obj = resolve_card_by_name(db, cand.card_name)
+        if not c_obj:
+            errors.append(
+                f"Carta papabile non trovata nel catalogo: '{cand.card_name}'."
+            )
+            continue
+        if getattr(c_obj, leg_col, "not_legal") != "legal":
+            errors.append(
+                f"Carta papabile non legale in {fmt.upper()}: '{c_obj.name}'."
+            )
+            continue
+        cand.card_name = c_obj.name
+        valid_candidates.append(cand)
+
+    output.suggested_swaps = valid_swaps
+    output.candidate_cards = valid_candidates
+
+    improved_entries: List[Tuple[Card, str, int]] = [
+        (card_obj, b, q) for (b, _), (card_obj, q) in working.items() if q > 0
+    ]
+    return errors, improved_entries, warnings
+
+
+def run_deck_improvement_skill(
+    db: Session,
+    req: AIDeckImprovementRequest,
+    progress=None,
+) -> Dict[str, Any]:
+    start_ts = time.time()
+
+    def step(phase: str) -> None:
+        if progress:
+            progress(phase)
+
+    step("context")
+    require_fresh_catalog(db)
+    provider = get_active_ai_provider(db)
+    skill_cfg = get_skill_model_and_config(db, "deck_improvement", req.model_id)
+    prompt_ver, sys_prompt = load_skill_prompt(
+        "deck_improvement", skill_cfg["prompt_version"]
+    )
+
+    deck_obj, entries = _resolve_deck_entries_for_ai(
+        db, req.deck_id, req.decklist_text
+    )
+    if not entries:
+        raise ValueError("Mazzo vuoto o non valido. Seleziona un mazzo o incolla una lista.")
+
+    fmt = (deck_obj.format_id if deck_obj else req.format_id).lower()
+    deck_title = deck_obj.name if deck_obj else req.deck_name
+    requested_arch = (deck_obj.archetype if deck_obj and deck_obj.archetype else None)
+
+    report = validate_deck_entries(fmt, entries)
+    validation_notes = [i.message for i in report.issues] if report.issues else []
+
+    latest_snap = deck_engine.latest_snapshot(db, fmt)
+    ctx = _guide_context(db, latest_snap, entries)
+    before_analysis = deck_engine.analyze_list(db, entries)
+    before_structure = deck_engine.structure_summary(db, entries, fmt, requested_arch)
+    pool_block = _improvement_candidate_pool(db, fmt, latest_snap, entries)
+
+    from app.services.quality import records_text
+
+    records = records_text(db, deck_obj.id if deck_obj else None)
+    oracle_block = _format_entries_with_oracle(entries)
+
+    structure_lines = []
+    if before_structure.get("nearest"):
+        structure_lines.append(
+            "Archetipi del meta strutturalmente più simili: "
+            + ", ".join(
+                f"{n['archetype']} ({n['category']}, dist {n['distance']})"
+                for n in before_structure["nearest"]
+            )
+        )
+    if before_structure.get("issues"):
+        structure_lines.extend(before_structure["issues"])
+
+    base_prompt = (
+        evidence_context(db, fmt, latest_snap)
+        + f"""
+ANALISI PUNTI DEBOLI E MIGLIORAMENTO MAZZO:
+- Nome mazzo: {deck_title}
+- Formato: {fmt.upper()}
+- Archetipo dichiarato: {requested_arch or "da determinare"}
+- Focus / Richiesta specifica dell'utente: {req.user_prompt or "Ottimizzazione competitiva generale contro il metagame attuale"}
+
+=== LISTA ATTUALE CON TESTI ORACLE ===
+{oracle_block}
+
+=== RULING UFFICIALI DELLE NOSTRE CARTE (Scryfall) ===
+{ctx["rulings"] or "nessuno"}
+
+=== ANALISI DETERMINISTICA DELLA LISTA ATTUALE (calcolata dall'app) ===
+{ctx["analysis"]}
+{"Note di validazione: " + "; ".join(validation_notes) if validation_notes else "Lista legale 60/15."}
+{"Struttura: " + " | ".join(structure_lines) if structure_lines else ""}
+
+=== RISULTATI REALI DEL GIOCATORE ===
+{records or "nessuno registrato"}
+
+{ctx["field"]}
+
+=== LISTE DI CONSENSO DEI PRINCIPALI ARCHETIPI ===
+{ctx["consensus"] or "non disponibili"}
+
+{pool_block}
+""".strip()
+    )
+
+    step("analysis")
+    max_attempts = 1 + max(0, int(skill_cfg.get("max_retries", 1)))
+    attempts = 0
+    prompt = base_prompt
+    improvement_out: Optional[AIDeckImprovementOutput] = None
+    improved_entries = entries
+    warnings: List[str] = []
+
+    for attempt in range(max_attempts):
+        attempts = attempt + 1
+        candidate_out: AIDeckImprovementOutput = provider.generate_structured(
+            model_id=skill_cfg["model_id"],
+            system_instruction=sys_prompt,
+            user_prompt=prompt,
+            response_model=AIDeckImprovementOutput,
+        )
+        errors, improved_entries, warnings = _validate_and_apply_improvement_swaps(
+            db, fmt, entries, candidate_out
+        )
+        improvement_out = candidate_out
+        if not errors:
+            break
+        if attempt < max_attempts - 1:
+            step("repair")
+            prompt = (
+                base_prompt
+                + "\n\nCORREGGI QUESTI ERRORI DETERMINISTICI NEI CAMBI O NELLE CARTE PAPABILI:\n"
+                + "\n".join(f"- {e}" for e in errors)
+            )
+        else:
+            warnings.extend(errors)
+
+    assert improvement_out is not None
+    step("after_metrics")
+    after_analysis = deck_engine.analyze_list(db, improved_entries)
+    after_structure = deck_engine.structure_summary(
+        db, improved_entries, fmt, improvement_out.archetype or requested_arch
+    )
+    arena_txt, mtgo_txt = export_decklist_formats(improved_entries)
+
+    def serialize_entries(ent_list: List[Tuple[Card, str, int]]) -> List[dict]:
+        return [
+            {
+                "oracle_id": c.oracle_id,
+                "card_name": c.name,
+                "board": b,
+                "quantity": q,
+                "mana_cost": c.mana_cost,
+                "cmc": c.cmc,
+                "type_line": c.type_line,
+                "image_uris": c.image_uris,
+                "colors": c.colors,
+            }
+            for c, b, q in ent_list
+        ]
+
+    improved_colors = sorted(
+        {
+            col
+            for c, _, _ in improved_entries
+            for col in (c.colors or c.produced_mana or [])
+            if col in deck_engine.WUBRG
+        }
+    )
+    source_colors = sorted(
+        {
+            col
+            for c, _, _ in entries
+            for col in (c.colors or c.produced_mana or [])
+            if col in deck_engine.WUBRG
+        }
+    )
+
+    result_payload = {
+        "improvement": improvement_out.model_dump(),
+        "source_deck": {
+            "id": deck_obj.id if deck_obj else None,
+            "name": deck_title,
+            "format_id": fmt,
+            "archetype": requested_arch or improvement_out.archetype,
+            "colors": source_colors,
+            "cards": serialize_entries(entries),
+        },
+        "improved_deck_preview": {
+            "name": improvement_out.deck_name or f"{deck_title} (Ottimizzato)",
+            "format_id": fmt,
+            "archetype": improvement_out.archetype or requested_arch or "midrange",
+            "colors": improved_colors,
+            "cards": serialize_entries(improved_entries),
+            "exports": {"arena": arena_txt, "mtgo": mtgo_txt},
+        },
+        "comparison": {
+            "before_analysis": before_analysis,
+            "after_analysis": after_analysis,
+            "before_structure": before_structure,
+            "after_structure": after_structure,
+        },
+        "warnings": warnings,
+    }
+
+    step("save")
+    duration_ms = int((time.time() - start_ts) * 1000)
+    ai_run = AIRun(
+        skill_name="deck_improvement",
+        prompt_version=prompt_ver,
+        model_id=skill_cfg["model_id"],
+        provider=provider.provider_name,
+        usage_json=dict(getattr(provider, "usage", None) or {}) or None,
+        format_id=fmt,
+        deck_id=deck_obj.id if deck_obj else None,
+        validation_attempts=attempts,
+        duration_ms=duration_ms,
+        input_summary={
+            "deck_name": deck_title,
+            "deck_id": deck_obj.id if deck_obj else None,
+            "format_id": fmt,
+            "user_prompt": req.user_prompt,
+        },
+        output_json=result_payload,
+    )
+    db.add(ai_run)
+    db.commit()
+
+    return {
+        **result_payload,
+        "meta": {
+            "run_id": ai_run.id,
+            "skill": "deck_improvement",
             "prompt_version": prompt_ver,
             "model_id": skill_cfg["model_id"],
             "provider": provider.provider_name,

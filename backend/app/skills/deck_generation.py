@@ -60,16 +60,19 @@ OPPONENT_CARDS = 120
 # ---------------------------------------------------------------------------
 
 
+def _format_oracle_paragraphs(raw: str) -> str:
+    paragraphs = [" ".join(line.split()) for line in (raw or "").splitlines()]
+    return " ¶ ".join(p for p in paragraphs if p)
+
+
 def oracle_text(card: Card) -> str:
     faces = card.card_faces or []
     if len(faces) > 1:
-        text = " // ".join(
-            f"{f.get('name')} {f.get('mana_cost') or ''} ({f.get('type_line') or ''}): {f.get('oracle_text') or ''}"
+        return " // ".join(
+            f"{f.get('name')} {f.get('mana_cost') or ''} ({f.get('type_line') or ''}): {_format_oracle_paragraphs(f.get('oracle_text') or '')}"
             for f in faces
         )
-    else:
-        text = card.oracle_text or ""
-    return " ".join(text.split())
+    return _format_oracle_paragraphs(card.oracle_text or "")
 
 
 def card_line(card: Card, stat: Optional[MetaCardStat] = None, prefix: str = "") -> str:
@@ -267,11 +270,28 @@ def analysis_text(analysis: dict) -> str:
     ) or "nessuna"
     odds = analysis["odds"]
     tapped = analysis["tapped_lands"]
+    untapped_detail = (
+        f" ({', '.join(tapped['untapped_cards'])})"
+        if tapped.get("untapped_cards")
+        else ""
+    )
+    cond_detail = (
+        f" ({', '.join(tapped['conditional_cards'])})"
+        if tapped.get("conditional_cards")
+        else ""
+    )
+    tap_detail = (
+        f" ({', '.join(tapped['always_tapped_cards'])})"
+        if tapped.get("always_tapped_cards")
+        else ""
+    )
     return (
         f"Terre {analysis['land_count']} (+{analysis['mdfc_land_count']} MDFC con faccia terra); "
         f"MV medio non-terre {analysis['avg_mana_value_nonland']}; curva {curve}.\n"
         f"Fonti per colore: {colors or 'n/d'}.\n"
-        f"Terre: {tapped['untapped']} stappate, {tapped['conditional']} condizionali, {tapped['tapped']} sempre tappate.\n"
+        f"Terre (ingresso in campo): {tapped['untapped']} stappate{untapped_detail}, "
+        f"{tapped['conditional']} condizionali all'ingresso{cond_detail}, "
+        f"{tapped['tapped']} sempre tappate{tap_detail}.\n"
         f"Interazione main: {inter(analysis['interaction_main'])}.\n"
         f"Interazione side: {inter(analysis['interaction_side'])}.\n"
         f"Probabilità: 2-5 terre in 7 carte {odds['p_2_to_5_lands_in_7']:.0%} "

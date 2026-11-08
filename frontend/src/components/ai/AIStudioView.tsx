@@ -7,6 +7,7 @@ import {
   Settings,
   Sparkles,
   Swords,
+  Wrench,
   X,
 } from "lucide-react";
 import { api } from "../../api/client";
@@ -15,6 +16,7 @@ import type {
   Card,
   DeckDetail,
   DeckGenerationResult,
+  DeckImprovementResult,
   DeckSummary,
   FormatId,
   MetaArchetypeInfo,
@@ -24,6 +26,7 @@ import { GuideJobStatus } from "./GuideJobStatus";
 import { GuideReader } from "../library/GuideReader";
 import { CardInfoModal } from "../common/CardInfoModal";
 import { GenerationReport } from "./GenerationReport";
+import { ImprovementReport } from "./ImprovementReport";
 import { CostEstimate } from "./CostEstimate";
 import { AIJobStatus } from "./AIJobStatus";
 import { isActiveJob, useAIJob } from "../../hooks/useAIJob";
@@ -96,9 +99,9 @@ export function AIStudioView({
   onOpenDeckInPlaytest,
   onOpenSettings,
 }: Props) {
-  const [tab, setTab] = useState<"generator" | "guide" | "matchup">(
-      "generator",
-    ),
+  const [tab, setTab] = useState<
+      "generator" | "improve" | "guide" | "matchup"
+    >("generator"),
     [decks, setDecks] = useState<DeckSummary[]>([]),
     [archetypes, setArchetypes] = useState<MetaArchetypeInfo[]>([]);
   const [color, setColor] = useState("Dimir"),
@@ -217,6 +220,13 @@ export function AIStudioView({
   const [matchup, setMatchup] = useState<any>(null),
     [matchError, setMatchError] = useState(""),
     [loadError, setLoadError] = useState("");
+  const [improveDeck, setImproveDeck] = useState<number | "custom">(
+      activeDeck?.id || "custom",
+    ),
+    [customImprove, setCustomImprove] = useState(""),
+    [improvePrompt, setImprovePrompt] = useState(""),
+    [improvement, setImprovement] = useState<DeckImprovementResult | null>(null),
+    [improveError, setImproveError] = useState("");
   const available =
     settings?.available_models.filter((m) => m.tier === "complex") || [];
   const ready = !!(
@@ -251,6 +261,7 @@ export function AIStudioView({
     if (activeDeck) {
       setGuideDeck(activeDeck.id);
       setDeckA(activeDeck.id);
+      setImproveDeck(activeDeck.id);
     }
   }, [activeDeck?.id]);
   useEffect(() => {
@@ -362,8 +373,19 @@ export function AIStudioView({
     if (job.status === "completed") setMatchup(job.result);
     else if (job.status === "failed") setMatchError(job.error || "");
   });
+  const [improveJob, setImproveJob] = useAIJob(
+    formatId,
+    "deck_improvement",
+    (job) => {
+      if (job.status === "completed") {
+        setImprovement(job.result);
+        loadDecks();
+      } else if (job.status === "failed") setImproveError(job.error || "");
+    },
+  );
   const genLoading = isActiveJob(genJob);
   const matchLoading = isActiveJob(matchJob);
+  const improveLoading = isActiveJob(improveJob);
   const cancelJob = async (id: number, setJob: (j: any) => void) => {
     try {
       setJob(await api.cancelAIJob(id));
@@ -466,6 +488,26 @@ export function AIStudioView({
       setMatchError(e.message);
     }
   };
+  const runImprove = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setImproveError("");
+    setImprovement(null);
+    try {
+      const job = await api.startDeckImprovementJob({
+        format_id: formatId,
+        deck_id: improveDeck === "custom" ? undefined : improveDeck,
+        decklist_text: improveDeck === "custom" ? customImprove : undefined,
+        deck_name:
+          decks.find((d) => d.id === improveDeck)?.name ||
+          "Lista personalizzata",
+        user_prompt: improvePrompt.trim() || undefined,
+        model_id: modelId,
+      });
+      setImproveJob(job);
+    } catch (e: any) {
+      setImproveError(e.message);
+    }
+  };
   const deckSelect = (
     value: number | "custom",
     setValue: (v: number | "custom") => void,
@@ -495,7 +537,7 @@ export function AIStudioView({
     loading: boolean,
     label: string,
     disabled = false,
-    skill?: "deck_generation" | "deck_guide" | "matchup_spot",
+    skill?: "deck_generation" | "deck_guide" | "matchup_spot" | "deck_improvement",
   ) => (
     <div className="space-y-2">
       <button
@@ -600,6 +642,7 @@ export function AIStudioView({
         {(
           [
             ["generator", "Crea mazzo", Sparkles],
+            ["improve", "Migliora mazzo", Wrench],
             ["guide", "Guida e sideboard", BookOpen],
             ["matchup", "Confronta matchup", Swords],
           ] as const
@@ -615,6 +658,74 @@ export function AIStudioView({
           </button>
         ))}
       </nav>
+      {tab === "improve" && (
+        <div className="space-y-5">
+          <form className="panel space-y-5" onSubmit={runImprove}>
+            <div className="grid md:grid-cols-2 gap-4">
+              {deckSelect(
+                improveDeck,
+                setImproveDeck,
+                "Mazzo da analizzare e migliorare",
+              )}
+              <label className="block text-sm text-slate-300">
+                Obiettivo o focus specifico (opzionale)
+                <input
+                  type="text"
+                  className="field block w-full mt-2"
+                  placeholder="Es. Migliorare il matchup contro Aggro, sistemare la manabase, aggiornare la sideboard…"
+                  value={improvePrompt}
+                  onChange={(e) => setImprovePrompt(e.target.value)}
+                />
+              </label>
+            </div>
+            {improveDeck === "custom" && (
+              <label className="block text-sm text-slate-300">
+                Lista del mazzo (formato MTG Arena / MTGO)
+                <textarea
+                  className="field block w-full mt-2 min-h-[150px] font-mono text-xs"
+                  placeholder={"4 Fatal Push\n4 Thoughtseize\n...\n\nSideboard\n2 Duress"}
+                  value={customImprove}
+                  onChange={(e) => setCustomImprove(e.target.value)}
+                />
+              </label>
+            )}
+            <p className="text-xs text-slate-400">
+              L'AI analizza punti deboli strutturali (fonti Karsten, curva, densità d'interazione, posizionamento nel metagame),
+              propone cambi bilanciati <strong>OUT → IN</strong> validati sul catalogo del formato e suggerisce ulteriori carte papabili.
+            </p>
+            {improveError && (
+              <p className="notice-error" role="alert">
+                {improveError}
+              </p>
+            )}
+            {runButton(
+              improveLoading,
+              "Analizza punti deboli e migliora mazzo",
+              improveDeck === "custom" && !customImprove.trim(),
+              "deck_improvement",
+            )}
+          </form>
+          {improveJob && improveLoading && (
+            <AIJobStatus
+              job={improveJob}
+              onCancel={() => cancelJob(improveJob.id, setImproveJob)}
+            />
+          )}
+          {improvement && (
+            <ImprovementReport
+              result={improvement}
+              onInspectCard={inspect}
+              onOpenDeckInBuilder={async (deckId) => {
+                try {
+                  const full = await api.getDeck(deckId);
+                  loadDecks();
+                  onOpenDeckInBuilder(full);
+                } catch {}
+              }}
+            />
+          )}
+        </div>
+      )}
       {tab === "generator" && (
         <div className="space-y-5">
           <form className="panel space-y-5" onSubmit={runGenerate}>

@@ -17,21 +17,29 @@ def dereference_json_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
     """
     defs = schema.get("$defs") or schema.get("definitions") or {}
 
-    def _resolve(node: Any) -> Any:
+    def _resolve(node: Any, is_properties_map: bool = False) -> Any:
         if isinstance(node, dict):
-            if "$ref" in node:
+            if not is_properties_map and "$ref" in node:
                 ref_path = node["$ref"]
                 ref_name = ref_path.split("/")[-1]
                 if ref_name in defs:
-                    return _resolve(copy.deepcopy(defs[ref_name]))
+                    return _resolve(copy.deepcopy(defs[ref_name]), False)
             cleaned: Dict[str, Any] = {}
             for k, v in node.items():
-                if k in ("$defs", "definitions", "title", "default"):
+                if not is_properties_map and k in (
+                    "$defs",
+                    "definitions",
+                    "title",
+                    "default",
+                ):
                     continue
-                cleaned[k] = _resolve(v)
+                cleaned[k] = _resolve(
+                    v,
+                    is_properties_map=(not is_properties_map and k == "properties"),
+                )
             return cleaned
         elif isinstance(node, list):
-            return [_resolve(item) for item in node]
+            return [_resolve(item, False) for item in node]
         return node
 
     return _resolve(copy.deepcopy(schema))

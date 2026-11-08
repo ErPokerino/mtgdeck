@@ -17,6 +17,13 @@ const PHASES: Record<AIJob["kind"], [string, string][]> = {
     ["analysis", "Analisi del matchup"],
     ["save", "Verifica e salvataggio"],
   ],
+  deck_improvement: [
+    ["context", "Analisi metagame e struttura"],
+    ["analysis", "Ricerca punti deboli e carte papabili"],
+    ["repair", "Verifica legalità e copie dei cambi"],
+    ["after_metrics", "Ricalcolo metriche prima/dopo"],
+    ["save", "Salvataggio report"],
+  ],
 };
 
 export function AIJobStatus({

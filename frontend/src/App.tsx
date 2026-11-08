@@ -3,6 +3,7 @@ import { api } from "./api/client";
 import { LibraryView } from "./components/library/LibraryView";
 import { Onboarding } from "./components/layout/Onboarding";
 import { AIStudioView } from "./components/ai/AIStudioView";
+import { AssistantAgentWidget } from "./components/ai/AssistantAgentWidget";
 import { DeckBuilderView } from "./components/deckbuilder/DeckBuilderView";
 import { FormatExplorerView } from "./components/formats/FormatExplorerView";
 import { SettingsModal } from "./components/layout/SettingsModal";
@@ -488,6 +489,15 @@ export const App: React.FC = () => {
         restartToken={helpToken}
         onNavigate={(tab) => navigateTo({ tab })}
         onSettings={() => setIsSettingsOpen(true)}
+      />
+      <AssistantAgentWidget
+        formatId={selectedFormat}
+        activeTab={activeTab}
+        activeDeck={
+          activeDeck?.format_id === selectedFormat ? activeDeck : null
+        }
+        settings={settings}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
     </div>
   );

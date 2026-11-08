@@ -52,6 +52,54 @@ INTERACTION_GROUPS = {
     "vantaggio carte": ("card-advantage-net",),
 }
 
+
+def _is_one_for_one_card_flow(card: Card, card_tags: set) -> bool:
+    """True when an instant/sorcery only replaces itself (cantrip, cycling, or 1-card look-at-top)
+    without generating net card advantage."""
+    if "cantrip" in card_tags:
+        return True
+    face0 = _faces(card)[0]
+    type_line = face0.get("type_line") or ""
+    if not any(t in type_line for t in ("Instant", "Sorcery")) or len(_faces(card)) > 1:
+        return False
+    text = (face0.get("oracle_text") or "").lower()
+    if any(
+        k in text
+        for k in (
+            "flashback",
+            "escape",
+            "rebound",
+            "jump-start",
+            "retrace",
+            "buyback",
+            "cipher",
+            "harmonize",
+            "you may play",
+            "you may cast",
+        )
+    ):
+        return False
+    non_cycling = re.sub(r"cycling[^\n]*", "", text)
+    if "cycling" in text and not re.search(
+        r"\b(draw|put\b.*\binto your hand|investigate|connive|discover|cascade|return\b.*\bto your hand)\b",
+        non_cycling,
+    ):
+        return True
+    if re.search(r"put one (?:of them )?into your hand", non_cycling) and not re.search(
+        r"\b(draw|put (?:two|three|four|up to two|up to three)|more than|investigate|connive)\b",
+        non_cycling,
+    ):
+        return True
+    return False
+
+
+def _group_hit(card: Card, card_tags: set, group: str) -> bool:
+    if not (card_tags & set(INTERACTION_GROUPS[group])):
+        return False
+    if group == "vantaggio carte" and _is_one_for_one_card_flow(card, card_tags):
+        return False
+    return True
+
 CORE_INCLUSION_PCT = 80.0
 
 
@@ -263,8 +311,8 @@ def field_model(db: Session, snapshot: MetaSnapshot, limit: int = 8) -> List[Fie
                 curve[_bucket(castable_mana_value(card))] += expected
                 card_tags = set(tags.get(u.oracle_id, []))
                 hit = False
-                for group, group_tags in INTERACTION_GROUPS.items():
-                    if card_tags & set(group_tags):
+                for group in INTERACTION_GROUPS:
+                    if _group_hit(card, card_tags, group):
                         interaction[group] += expected
                         hit = hit or group != "vantaggio carte"
                 if hit and expected >= 0.5:
@@ -363,6 +411,8 @@ def analyze_list(
     deck_lands = [(c, f) for c, _, f in lands]
     sources: Dict[str, float] = dict.fromkeys(WUBRG, 0)
     tapped = {"untapped": 0, "conditional": 0, "tapped": 0}
+    untapped_cards: List[str] = []
+    conditional_cards: List[str] = []
     tapped_cards: List[str] = []
     land_count = mdfc_count = 0
     for card, qty, face in lands:
@@ -378,7 +428,11 @@ def analyze_list(
         if not mdfc:
             kind = _tapped_kind(face.get("oracle_text") or "")
             tapped[kind] += qty
-            if kind == "tapped":
+            if kind == "untapped":
+                untapped_cards.append(f"{qty} {card.name}")
+            elif kind == "conditional":
+                conditional_cards.append(f"{qty} {card.name}")
+            elif kind == "tapped":
                 tapped_cards.append(f"{qty} {card.name}")
 
     # Requirement per colour: the most demanding (pips, turn) among castable faces.
@@ -426,8 +480,8 @@ def analyze_list(
 
     def interaction(board: List[Tuple[Card, int]]) -> Dict[str, dict]:
         out = {}
-        for group, group_tags in INTERACTION_GROUPS.items():
-            hits = [(c, q) for c, q in board if set(tags.get(c.oracle_id, [])) & set(group_tags)]
+        for group in INTERACTION_GROUPS:
+            hits = [(c, q) for c, q in board if _group_hit(c, set(tags.get(c.oracle_id, [])), group)]
             if hits:
                 out[group] = {
                     "copies": sum(q for _, q in hits),
@@ -476,7 +530,12 @@ def analyze_list(
         "avg_mana_value_nonland": round(sum(nonland_mv) / len(nonland_mv), 2) if nonland_mv else 0,
         "curve": curve,
         "colors": colors_report,
-        "tapped_lands": {**tapped, "always_tapped_cards": tapped_cards},
+        "tapped_lands": {
+            **tapped,
+            "untapped_cards": untapped_cards,
+            "conditional_cards": conditional_cards,
+            "always_tapped_cards": tapped_cards,
+        },
         "interaction_main": interaction(main),
         "interaction_side": interaction(side),
         "odds": odds,
@@ -540,8 +599,11 @@ def structure_profile(db: Session, entries: Iterable[Tuple[Card, str, int]]) -> 
     tags = tags_for(db, [c.oracle_id for c, _ in nonland])
 
     def copies(groups: Sequence[str]) -> int:
-        wanted = {t for g in groups for t in INTERACTION_GROUPS[g]}
-        return sum(q for c, q in nonland if set(tags.get(c.oracle_id, [])) & wanted)
+        return sum(
+            q
+            for c, q in nonland
+            if any(_group_hit(c, set(tags.get(c.oracle_id, [])), g) for g in groups)
+        )
 
     mvs = [castable_mana_value(c) for c, q in nonland for _ in range(q)]
     return {

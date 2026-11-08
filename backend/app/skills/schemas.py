@@ -427,3 +427,127 @@ class GuideReviewOutput(BaseModel):
         default_factory=list,
         description="Solo errori concreti non risolvibili con una patch; vuoto se nessuno",
     )
+
+
+# ============================================================================
+# SKILL 4: MIGLIORA MAZZO AI (deck_improvement)
+# ============================================================================
+class AIDeckWeaknessItem(BaseModel):
+    severity: Literal["alta", "media", "bassa"]
+    area: Literal[
+        "manabase",
+        "curva",
+        "interazione",
+        "minacce",
+        "sinergie",
+        "sideboard",
+        "posizionamento_meta",
+    ]
+    title: str = Field(description="Titolo sintetico del punto debole individuato")
+    finding: str = Field(
+        description="Spiegazione tecnica basata sui dati calcolati (fonti Karsten, curva, densità di risposte) e sul metagame attuale"
+    )
+    affected_matchups: List[str] = Field(
+        default_factory=list,
+        description="Archetipi del formato in cui questo punto debole ci penalizza maggiormente",
+    )
+    recommendation: str = Field(
+        description="Direzione concreta di intervento per risolvere o mitigare la debolezza"
+    )
+
+
+class AIDeckSwapSuggestion(BaseModel):
+    board: Literal["main", "side"]
+    priority: Literal["alta", "media", "opzionale"] = "alta"
+    card_out: str = Field(
+        description="Nome inglese esatto della carta attualmente presente in questo board da tagliare"
+    )
+    card_in: str = Field(
+        description="Nome inglese esatto della carta legale nel formato da inserire al suo posto"
+    )
+    quantity: int = Field(ge=1, le=15)
+    role: str = Field(
+        description="Ruolo funzionale dello slot (es. 'Rimozione a costo 1', 'Fonte doppia stappata', 'Hate Cimitero')"
+    )
+    reason_out: str = Field(
+        description="Perché tagliare queste copie di card_out (es. ridondante, troppo lenta contro il campo atteso, mana-inefficiente)"
+    )
+    reason_in: str = Field(
+        description="Perché inserire card_in al suo posto (sinergia, efficienza, soglie del formato)"
+    )
+    matchups_improved: List[str] = Field(
+        default_factory=list,
+        description="Archetipi contro cui il cambio migliora sensibilmente il piano",
+    )
+    opportunity_cost: str = Field(
+        default="",
+        description="Cosa si cede con questo cambio o in quali situazioni card_out era superiore",
+    )
+
+
+class AICandidateCardOption(BaseModel):
+    card_name: str = Field(
+        description="Nome inglese esatto di una carta legale nel formato papabile per il mazzo"
+    )
+    board: Literal["main", "side"] = "main"
+    suggested_copies: int = Field(default=2, ge=1, le=4)
+    replaces_candidates: List[str] = Field(
+        default_factory=list,
+        description="Carte attuali del mazzo al posto delle quali potrebbe entrare",
+    )
+    role: str = Field(description="Ruolo tattico della carta candidata")
+    why_consider: str = Field(
+        description="Perché è una carta papabile per questo archetipo e come interagisce con il resto della lista"
+    )
+    when_to_prefer: str = Field(
+        description="Condizione di metagame o stile di gioco in cui preferirla rispetto agli slot attuali"
+    )
+
+
+class AIDeckImprovementOutput(BaseModel):
+    deck_name: str
+    archetype: str = Field(
+        description="aggro | midrange | control | combo | tempo | ramp"
+    )
+    verdict: Literal["ottimizzato", "migliorabile", "da_ristrutturare"]
+    overall_assessment: str = Field(
+        description="Sintesi tecnica dello stato attuale della lista, coerenza del piano e direzione degli interventi consigliati"
+    )
+    manabase_diagnosis: str = Field(
+        description="Valutazione di fonti per colore rispetto ai requisiti Karsten, terre tappate/condizionali e stabilità dei primi turni"
+    )
+    curve_and_interaction_diagnosis: str = Field(
+        description="Valutazione della curva di mana, densità di minacce, rimozioni, counter e vantaggio carte rispetto al ruolo del mazzo"
+    )
+    meta_positioning_diagnosis: str = Field(
+        description="Posizionamento della lista attuale contro i principali archetipi del formato e dove servono correttivi"
+    )
+    strengths_to_preserve: List[str] = Field(
+        default_factory=list,
+        description="3-5 punti di forza e pacchetti sinergici della lista attuale da non snaturare",
+    )
+    weaknesses: List[AIDeckWeaknessItem] = Field(
+        default_factory=list,
+        description="3-6 punti deboli strutturali o di posizionamento individuati nella lista",
+    )
+    suggested_swaps: List[AIDeckSwapSuggestion] = Field(
+        default_factory=list,
+        description="Cambi concreti consigliati (OUT -> IN) bilanciati per board per ottenere la versione migliorata",
+    )
+    candidate_cards: List[AICandidateCardOption] = Field(
+        default_factory=list,
+        description="4-8 ulteriori carte papabili (alternative di main o tech di sideboard) con indicazione di cosa sostituirebbero",
+    )
+    sideboard_tuning_notes: str = Field(
+        default="",
+        description="Come la nuova configurazione di sideboard copre i matchup principali del formato",
+    )
+
+
+class AIDeckImprovementRequest(BaseModel):
+    deck_id: Optional[int] = None
+    format_id: Literal["standard", "pioneer", "modern"] = "standard"
+    deck_name: str = "Mazzo da Migliorare"
+    decklist_text: Optional[str] = Field(default=None, max_length=15000)
+    user_prompt: Optional[str] = Field(default=None, max_length=2000)
+    model_id: Optional[str] = None

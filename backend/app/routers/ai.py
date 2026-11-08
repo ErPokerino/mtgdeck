@@ -1,17 +1,19 @@
-from typing import Any, Dict, List
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, WebSocket
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import AIJob, AIRun, GuideJob, utcnow
-from app.services import ai_jobs, guide_jobs
+from app.services import ai_jobs, assistant_agent, guide_jobs
 from app.skills.deck_generation import run_deck_generation_skill
 from app.skills.runner import (
     run_deck_guide_skill,
+    run_deck_improvement_skill,
     run_matchup_spot_skill,
 )
 from app.skills.schemas import (
     AIDeckGenerationRequest,
     AIDeckGuideRequest,
+    AIDeckImprovementRequest,
     AIMatchupSpotRequest,
 )
 
@@ -111,6 +113,16 @@ def start_matchup_job(
         raise HTTPException(400, str(exc)) from exc
 
 
+@router.post("/jobs/deck-improvement")
+def start_deck_improvement_job(
+    payload: AIDeckImprovementRequest, db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    try:
+        return ai_jobs.create_job(db, "deck_improvement", payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.get("/jobs")
 def list_ai_jobs(format_id: str, kind: str, db: Session = Depends(get_db)):
     """Active jobs plus the latest finished one: enough to resume after a reload."""
@@ -168,6 +180,55 @@ def api_matchup_spot(
         return run_matchup_spot_skill(db, payload)
     except Exception as exc:  # noqa: BLE001 - synchronous endpoint: any failure is the user's 400
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/improve-deck")
+def api_improve_deck(
+    payload: AIDeckImprovementRequest, db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    try:
+        return run_deck_improvement_skill(db, payload)
+    except Exception as exc:  # noqa: BLE001 - synchronous endpoint: any failure is the user's 400
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/agent/chat")
+def api_agent_chat(
+    payload: assistant_agent.AgentChatRequest, db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    try:
+        return assistant_agent.run_assistant_agent(db, payload)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/agent/tools")
+def api_agent_tools() -> Dict[str, Any]:
+    return {
+        "tools": [
+            {"name": t["name"], "description": t["description"]}
+            for t in assistant_agent.AGENT_TOOL_DECLARATIONS
+        ]
+    }
+
+
+@router.websocket("/agent/live")
+async def ws_agent_live(
+    websocket: WebSocket,
+    format_id: str = "pioneer",
+    active_deck_id: Optional[int] = None,
+    active_deck_name: Optional[str] = None,
+    active_tab: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> None:
+    await assistant_agent.run_live_voice_session(
+        websocket=websocket,
+        db=db,
+        format_id=format_id,
+        active_deck_id=active_deck_id,
+        active_deck_name=active_deck_name,
+        active_tab=active_tab,
+    )
 
 
 @router.get("/runs")

@@ -236,6 +236,49 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  startDeckImprovementJob: (payload: Record<string, unknown>) =>
+    apiFetch<AIJob>("/api/ai/jobs/deck-improvement", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  improveDeckAI: (payload: {
+    deck_id?: number;
+    format_id: FormatId;
+    deck_name: string;
+    decklist_text?: string;
+    user_prompt?: string;
+    model_id?: string;
+  }) =>
+    apiFetch<any>("/api/ai/improve-deck", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  agentChat: (payload: {
+    message: string;
+    previous_interaction_id?: string | null;
+    history?: Array<{ role: "user" | "assistant"; content: string }>;
+    format_id: FormatId;
+    active_tab?: string;
+    active_deck_id?: number | null;
+    active_deck_name?: string | null;
+    model_id?: string;
+  }) =>
+    apiFetch<{
+      reply: string;
+      interaction_id?: string | null;
+      tool_calls: Array<{
+        id: string;
+        tool_name: string;
+        arguments: Record<string, any>;
+        summary: string;
+        status: "completed" | "error";
+      }>;
+      model_id: string;
+      duration_ms: number;
+    }>("/api/ai/agent/chat", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   listAIJobs: (formatId: FormatId, kind: AIJob["kind"]) =>
     apiFetch<{ jobs: AIJob[] }>(
       `/api/ai/jobs?format_id=${formatId}&kind=${kind}`,

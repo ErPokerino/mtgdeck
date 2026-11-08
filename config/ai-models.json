@@ -93,6 +93,16 @@
       "tier": "complex",
       "promptVersion": "v1",
       "maxValidationRetries": 1
+    },
+    "deck_improvement": {
+      "tier": "complex",
+      "promptVersion": "v1",
+      "maxValidationRetries": 2
+    },
+    "assistant_agent": {
+      "tier": "complex",
+      "promptVersion": "v1",
+      "maxValidationRetries": 1
     }
   }
 }
