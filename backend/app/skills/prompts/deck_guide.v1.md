@@ -1,13 +1,14 @@
 ---
 skill: deck_guide
-version: v7.2.0
-updated_at: 2026-11-08
+version: v7.3.0
+updated_at: 2026-11-10
 ---
 Scrivi in ITALIANO una guida competitiva per la lista esatta fornita; nomi delle carte in INGLESE. Il lettore prepara un torneo: ogni frase deve aiutarlo a prendere una decisione. Niente retorica, superlativi o ripetizioni. Non copiare per esteso i testi Oracle.
 
 EVIDENZA E REGOLE
 - Testi Oracle, ruling ufficiali, forza/costituzione e valore di mana (MV) forniti sono fatti: ogni interazione che descrivi deve essere coerente con essi. Controlla tutte le facce delle carte, i costi, i bersagli legali, il timing (stregoneria o istantaneo, attivazioni "only as a sorcery"), le zone e le condizioni. Non citare a memoria statistiche o testi: usa quelli forniti.
 - La legalità della lista è già verificata dall'app: non scrivere avvertenze su legalità o banlist.
+- Ogni carta che nomini fuori dalla lista (alternative considerate, carte escluse, flex, tech, consigli) deve essere legale nel formato secondo le REGOLE DEL FORMATO fornite: mai carte bandite o fuori formato, nemmeno per dire che le escludiamo. Scegli le alternative tra le ALTERNATIVE LEGALI OSSERVATE o tra le carte già nel contesto.
 - I conti devono tornare: se scrivi un totale con il dettaglio tra parentesi, la somma deve coincidere, e lo stesso numero deve essere uguale in tutte le sezioni.
 - Nel testo Oracle il simbolo `¶` (o l'a capo) separa abilità distinte e indipendenti (CR 113.1c): una clausola come "Activate only if..." alla fine di un paragrafo si applica SOLO all'abilità in quello stesso paragrafo, mai alle abilità negli altri paragrafi della carta. Non confondere terre che entrano tappate su condizione ("enters tapped unless...") con terre che entrano sempre stappate ma hanno una seconda abilità di mana condizionale.
 - Verifica sempre che un counterspell o una rimozione possa bersagliare e neutralizzare/distruggere legalmente la carta citata (rispetta "can't be countered", vincoli di valore di mana o tipo, e ricorda che abilità attivate come Ninjutsu o Channel non sono magie).
@@ -32,12 +33,12 @@ STRUTTURA
 - format_context_and_magic_numbers (max 120 parole): le soglie che contano nel meta (danni delle rimozioni più giocate, costi colpiti dall'interazione avversaria, velocità del clock) e come la lista le rispetta.
 - manabase_and_probability_analysis (max 120 parole): commenta fonti rispetto ai requisiti, terre tappate e probabilità forniti; spiega le scelte di terre.
 - card_roles (10-16 voci): carte chiave di main e sideboard, terre comprese quando la scelta conta. Una voce per nome con la quantità TOTALE tra main e side. `role_category` è una di: Minaccia principale, Motore, Interazione, Flex slot, Manabase, Tech di sideboard. In `explanation` motiva il numero di copie nel meta; in `alternatives_considered` nomina 1-2 alternative concrete e perché questa è preferita.
-- flex_slots: 2-4 slot flessibili con il trigger di meta per cambiarli ("se X cresce, A al posto di B").
+- flex_slots: 2-4 carte della lista che occupano slot flessibili, con il trigger di meta per cambiarle ("se X cresce, A al posto di B").
 - synergies (3-5): linee precise con vincoli Oracle e risposta avversaria.
 - early/mid/late_game_plan (max 70 parole ciascuno): decisioni concrete per fase, senza ripetere il titolo ("Turni 1-3:") all'inizio del testo.
 - mulligan_heuristics (max 100 parole) e 4 mulligan_examples con esattamente 7 carte reali del main. Includi: una mano il cui verdetto cambia secondo il matchup (dillo nel contesto), una "trap hand" da mandare in mulligan, una mano rischiosa ma corretta motivata con le probabilità fornite. Una mano tenuta ha almeno 2 terre e deve poter lanciare magie con i colori delle sue terre; una mano da 1 terra è sempre mulligan.
 - strengths, weaknesses: 3 elementi ciascuno. tips_and_tricks: 5-8 consigli verificabili sui testi.
-- excluded_cards_and_donts: 3-4 alternative plausibili del formato, motivate rispetto al meta.
+- excluded_cards_and_donts: 3-4 alternative legali e plausibili del formato che non giochiamo (non carte della lista), motivate rispetto al meta.
 
 MATCHUP
 - Un matchup per OGNI archetipo obbligatorio, con il nome esatto, senza duplicati. La guida copre tutti i matchup principali in formato operativo; l'analisi approfondita di un singolo matchup spetta all'Analisi matchup dedicata.

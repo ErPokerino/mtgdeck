@@ -481,6 +481,8 @@ def legality_report(db, fmt, entries, missing=()):
 
 
 def evidence_context(db, fmt, snapshot=None):
+    from app.services.format_rules import format_rules_block
+
     if snapshot is None:
         snapshot = (
             db.query(MetaSnapshot)
@@ -496,6 +498,8 @@ def evidence_context(db, fmt, snapshot=None):
         f"rilevazione: {snapshot.fetched_at.isoformat() if snapshot else 'non disponibile'}. "
         "La legalità delle liste è verificata automaticamente dall'app: non scrivere avvertenze in proposito. "
         "Le stime strategiche non sono risultati di partite.\n"
+        + format_rules_block(db, fmt)
+        + "\n"
     )
 
 

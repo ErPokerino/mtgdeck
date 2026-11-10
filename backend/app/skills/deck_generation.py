@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models import AIRun, Card, Deck, DeckCard, MetaArchetype, MetaCardStat, SetModel
+from app.models import AIRun, Card, Deck, DeckCard, MetaArchetype, MetaCardStat
 from app.routers.decks import _build_deck_detail, record_revision
 from app.services import deck_engine
 from app.services.ai_provider import get_active_ai_provider, get_skill_model_and_config
@@ -38,6 +38,7 @@ from app.services.guide_quality import (
     require_fresh_catalog,
     validate_swaps,
 )
+from app.services.format_rules import CardNameIndex, card_index, illegal_mention_errors, illegal_mentions
 from app.services.scryfall_sync import sort_colors_wubrg
 from app.skills.common import archetype_summary, load_skill_prompt
 from app.skills.schemas import (
@@ -465,12 +466,9 @@ def build_context(db: Session, req: AIDeckGenerationRequest) -> GenerationContex
         + "\nLe fetch contano solo per i colori che possono cercare; le terre che entrano tappate costano tempo."
     )
 
-    banned = [n for (n,) in db.query(Card.name).filter(leg_col == "banned").order_by(Card.name)]
-    set_col = getattr(SetModel, f"is_{fmt}_legal")
-    sets_count = db.query(SetModel).filter(set_col.is_(True)).count()
+    # Scope and banlist arrive with evidence_context, shared by every skill.
     header = (
         f"=== FORMATO {fmt.upper()} ===\n"
-        f"Set legali: {sets_count}. Banlist (rifiutate dal validatore): {', '.join(banned) or 'nessuna'}.\n"
         f"Archetipi principali per cui serve un piano di sideboard: {', '.join(plan_targets) or 'n/d'}."
     )
     opp_section = (
@@ -638,6 +636,39 @@ def plan_issues(
     return issues
 
 
+def _archetype_names(ctx: GenerationContext) -> List[str]:
+    names = [f.archetype.name for f in ctx.field] + [r.archetype.name for r in ctx.references]
+    return names + ([ctx.base.name] if ctx.base else [])
+
+
+def mention_issues(index: CardNameIndex, out: AIDeckGenerationOutput, ctx: GenerationContext) -> List[str]:
+    """Cards the motivations name that the format does not allow (banned, rotated, never legal)."""
+    return illegal_mention_errors(index, out.model_dump(), _archetype_names(ctx))
+
+
+def drop_illegal_notes(index: CardNameIndex, out: AIDeckGenerationOutput, ctx: GenerationContext) -> None:
+    """Excluded cards and flex rules are self-contained notes: one that still proposes an
+    unplayable card after revision is removed rather than published."""
+    ignore = _archetype_names(ctx)
+    for name in ("excluded_cards_or_traps", "flex_rules"):
+        notes = getattr(out, name)
+        setattr(out, name, [n for n in notes if not illegal_mentions(index, n, ignore)])
+
+
+def legal_critic_swaps(db: Session, fmt: str, critic: AIDeckCriticOutput) -> List[str]:
+    """A reviewer's swap that brings in an unplayable card is not a recommendation."""
+    dropped, kept = [], []
+    for swap in critic.swaps:
+        card = resolve_card_by_name(db, swap.card_in)
+        if card and getattr(card, f"legality_{fmt}", "not_legal") == "legal":
+            swap.card_in = card.name
+            kept.append(swap)
+        else:
+            dropped.append(swap.card_in)
+    critic.swaps = kept
+    return dropped
+
+
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
@@ -715,6 +746,7 @@ def run_deck_generation_skill(
             raise ValueError(f"Build-around non riconosciuta o non legale: {name}")
 
     ctx = build_context(db, req)
+    names = card_index(db, fmt)
     calls = 0
 
     def ask(system: str, prompt: str, model):
@@ -767,7 +799,7 @@ def run_deck_generation_skill(
         analysis = deck_engine.analyze_list(db, entries, key_cards=req.build_around_cards)
         structure, role = structure_report(db, entries, ctx, requested)
         analysis["structure"] = structure
-        return entries, analysis, plan_issues(out, entries, ctx) + role
+        return entries, analysis, plan_issues(out, entries, ctx) + role + mention_issues(names, out, ctx)
 
     entries, analysis, issues = checks(out)
 
@@ -797,6 +829,9 @@ def run_deck_generation_skill(
         critic = ask(critic_sys, critic_prompt, AIDeckCriticOutput)
     except Exception as exc:  # noqa: BLE001 - the list is already valid: a failed review is not fatal
         log.warning("deck_critic failed: %s", type(exc).__name__)
+    if critic:
+        for name in legal_critic_swaps(db, fmt, critic):
+            log.info("deck_critic: dropped swap with %s, not legal in %s", name, fmt)
 
     revision = {"attempted": False, "applied": False, "note": ""}
     needs_revision = bool(issues) or bool(
@@ -853,6 +888,8 @@ def run_deck_generation_skill(
             log.warning("deck_revision failed: %s", type(exc).__name__)
             revision["note"] = "Revisione non riuscita: resta la lista precedente."
 
+    drop_illegal_notes(names, out, ctx)
+    issues = [i for i in issues if not i.startswith("Carta non giocabile")] + mention_issues(names, out, ctx)
     out = polish_output(out)
     if ctx.base:
         out.base_archetype = ctx.base.name

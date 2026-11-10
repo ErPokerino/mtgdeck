@@ -40,6 +40,12 @@ from app.skills.schemas import (
 )
 
 from app.services import deck_engine
+from app.services.format_rules import (
+    card_index,
+    card_name_errors,
+    format_rules_block,
+    illegal_mention_errors,
+)
 from app.services.card_knowledge import rulings_for
 from app.services.guide_quality import key
 from app.skills.common import load_skill_prompt
@@ -87,6 +93,8 @@ def _resolve_deck_entries_for_ai(
 
 
 GUIDE_FIELD_SIZE = 8
+GUIDE_ALTERNATIVE_SPELLS = 60
+GUIDE_ALTERNATIVE_LANDS = 20
 GUIDE_CONSENSUS_LISTS = 4
 GUIDE_OPPONENT_CARDS = 100
 RULINGS_PER_CARD = 4
@@ -133,17 +141,55 @@ def _guide_context(db: Session, snapshot, entries) -> Dict[str, Any]:
                 opp_ids.append(c.oracle_id)
     opp_ids = opp_ids[:GUIDE_OPPONENT_CARDS]
     cards = {c.oracle_id: c for c in db.query(Card).filter(Card.oracle_id.in_(opp_ids))}
+    # Cards banned after the lists were played are not in the opponents' decks any more.
+    fmt = snapshot.format_id
+    observed_ids = {u.oracle_id for a in archs for u in a.cards}
+    legal_ids = {
+        c.oracle_id: getattr(c, f"legality_{fmt}", "not_legal") == "legal"
+        for c in db.query(Card).filter(Card.oracle_id.in_(observed_ids))
+    }
     return {
         "archetypes": archs,
         "field": field_text_block(snapshot, field_model, all_shares),
         "consensus": "\n\n".join(consensus),
         "opponent_oracle": "\n".join(card_line(cards[o]) for o in opp_ids if o in cards),
         "known_cards": {
-            key(a.name): {key(u.card_name) for u in a.cards} for a in archs
+            key(a.name): {
+                key(u.card_name)
+                for u in a.cards
+                if u.oracle_id not in legal_ids or legal_ids[u.oracle_id]
+            }
+            for a in archs
         },
         "analysis": analysis_text(analysis),
         "rulings": ruling_text,
     }
+
+
+def guide_card_errors(db: Session, fmt: str, names, guide: Dict[str, Any], entries, archetype_names) -> List[str]:
+    """Every card a guide names must be playable in the format, and the card fields must
+    agree with the list: flex slots are cards we play, excluded cards are cards we do not."""
+    in_list = {key(c.name) for c, _, _ in entries}
+    errors = illegal_mention_errors(names, guide, archetype_names)
+    structured = [
+        (f"/excluded_cards_and_donts/{i}/card_name", n.get("card_name", ""))
+        for i, n in enumerate(guide.get("excluded_cards_and_donts") or [])
+    ]
+    # The catalog check of a card field says the same thing, and also catches unknown names.
+    errors = [e for e in errors if not any(f"({path})" in e for path, _ in structured)]
+    errors += card_name_errors(db, fmt, structured)
+    for path, name in structured:
+        if key(name) in in_list:
+            errors.append(
+                f"Carta esclusa che è nella lista ({path}): '{name}'. Le carte escluse sono alternative che non giochiamo."
+            )
+    for i, slot in enumerate(guide.get("flex_slots") or []):
+        if key(slot.get("card_name", "")) not in in_list:
+            errors.append(
+                f"Flex slot non presente nella lista (/flex_slots/{i}/card_name): '{slot.get('card_name')}'. "
+                "Indica una carta della lista; la sostituta va nel trigger."
+            )
+    return list(dict.fromkeys(errors))
 
 
 def _format_entries_with_oracle(entries: List[Tuple[Card, str, int]]) -> str:
@@ -294,6 +340,16 @@ def _run_deck_guide_skill(
     records = records_text(db, deck_obj.id if deck_obj else None)
     archs = ctx["archetypes"]
     oracle_block = _format_entries_with_oracle(entries)
+    alternatives_block = _improvement_candidate_pool(
+        db, fmt, latest_snap, entries, spells=GUIDE_ALTERNATIVE_SPELLS, lands=GUIDE_ALTERNATIVE_LANDS
+    ).replace("POOL CARTE CANDIDATE LEGALI", "ALTERNATIVE LEGALI OSSERVATE", 1)
+    rules_block = format_rules_block(db, fmt)
+    names = card_index(db, fmt)
+    archetype_names = [a.name for a in archs]
+
+    def format_checks(guide):
+        return guide_card_errors(db, fmt, names, guide, entries, archetype_names)
+
     user_prompt = (
         evidence_context(db, fmt, latest_snap)
         + f"""
@@ -321,6 +377,9 @@ GUIDA COMPETITIVA E SIDEBOARD GUIDE PER QUESTA LISTA:
 === TESTI ORACLE DELLE CARTE AVVERSARIE CHIAVE ===
 {ctx["opponent_oracle"] or "non disponibili"}
 
+{alternatives_block}
+Per alternative considerate, carte escluse e flex slot scegli tra queste carte o tra quelle già nel contesto: sono legali in {fmt.upper()}.
+
 MATCHUP OBBLIGATORI (usa questi nomi esatti): {", ".join(a.name for a in archs) or "nessun metagame disponibile"}
 """.strip()
     )
@@ -346,7 +405,7 @@ MATCHUP OBBLIGATORI (usa questi nomi esatti): {", ".join(a.name for a in archs) 
         skill_cfg["model_id"],
         sys_prompt,
         user_prompt,
-        f"{oracle_block}\nANALISI CALCOLATA DALL'APP (fatti, citabili):\n{ctx['analysis']}"
+        f"{rules_block}\n{oracle_block}\nANALISI CALCOLATA DALL'APP (fatti, citabili):\n{ctx['analysis']}"
         f"\nRULING:\n{ctx['rulings']}\nCARTE AVVERSARIE:\n{ctx['opponent_oracle']}",
         entries,
         archs,
@@ -355,6 +414,7 @@ MATCHUP OBBLIGATORI (usa questi nomi esatti): {", ".join(a.name for a in archs) 
         trace.get("resume_draft"),
         max_reviews=1 + max(0, skill_cfg["max_retries"]),
         known_opponent_cards=ctx["known_cards"],
+        extra_checks=format_checks,
     )
     attempts = trace["attempts"]
     phase("weighted_estimate")
@@ -372,6 +432,7 @@ MATCHUP OBBLIGATORI (usa questi nomi esatti): {", ".join(a.name for a in archs) 
         "checked_at": guide["generated_at"],
         "checks": [
             "Legalità della lista nel formato",
+            "Legalità di ogni carta citata, alternative ed esclusioni comprese",
             "Copie, mani tenute lanciabili e sidate",
             "Conteggi e forza/costituzione citati nel testo",
             "Copertura dei matchup e carte avversarie osservate",
@@ -486,6 +547,7 @@ def run_matchup_spot_skill(
 
     step("context")
     require_fresh_catalog(db)
+    fmt = req.format_id.lower()
     provider = get_active_ai_provider(db)
     skill_cfg = get_skill_model_and_config(db, "matchup_spot", req.model_id)
     prompt_ver, sys_prompt = load_skill_prompt(
@@ -507,7 +569,7 @@ def run_matchup_spot_skill(
             .filter(MetaArchetype.id == req.deck_b_archetype_id)
             .first()
         )
-        if arch_b and arch_b.format_id != req.format_id:
+        if arch_b and arch_b.format_id != fmt:
             raise ValueError("Archetipo avversario di un formato diverso.")
         if arch_b:
             deck_b_name = arch_b.name
@@ -522,11 +584,11 @@ def run_matchup_spot_skill(
     if not entries_b:
         raise ValueError("Mazzo B (Avversario) vuoto o non valido.")
     for entries, obj in ((entries_a, deck_a_obj), (entries_b, None)):
-        if obj and obj.format_id != req.format_id:
+        if obj and obj.format_id != fmt:
             raise ValueError(
                 "Il formato del mazzo non corrisponde al formato selezionato."
             )
-        report = validate_deck_entries(req.format_id, entries)
+        report = validate_deck_entries(fmt, entries)
         if not report.is_valid:
             raise ValueError(
                 "Lista non valida: "
@@ -534,9 +596,9 @@ def run_matchup_spot_skill(
             )
 
     deck_a_name = deck_a_obj.name if deck_a_obj else req.deck_a_name
-    fmt = req.format_id.lower()
+    names = card_index(db, fmt)
 
-    user_prompt = f"""
+    user_prompt = evidence_context(db, fmt) + f"""
 ANALISI MATCHUP SPOT TESTA A TESTA ({fmt.upper()}):
 
 === MAZZO A (PILOTA: {deck_a_name}) ===
@@ -566,7 +628,7 @@ ANALISI MATCHUP SPOT TESTA A TESTA ({fmt.upper()}):
         ] + [
             f"Mazzo B: {e}"
             for e in validate_swaps(matchup_out.sideboard_plan_for_deck_b.model_dump(), entries_b)
-        ]
+        ] + illegal_mention_errors(names, matchup_out.model_dump(), [deck_a_name or "", deck_b_name or ""])
         if not errors:
             break
         if attempt == max_attempts - 1:
@@ -574,7 +636,7 @@ ANALISI MATCHUP SPOT TESTA A TESTA ({fmt.upper()}):
         step("repair")
         prompt = (
             user_prompt
-            + "\n\nCORREGGI QUESTI ERRORI DEI PIANI DI SIDEBOARD (IN dalla side, OUT dal main, bilanciati):\n"
+            + "\n\nCORREGGI QUESTI ERRORI (sideboard: IN dalla side, OUT dal main, bilanciati; solo carte legali nel formato):\n"
             + "\n".join(f"- {e}" for e in errors)
             + "\n\nANALISI PRECEDENTE (JSON):\n"
             + matchup_out.model_dump_json()
@@ -620,6 +682,8 @@ def _improvement_candidate_pool(
     fmt: str,
     snapshot,
     entries: List[Tuple[Card, str, int]],
+    spells: int = 120,
+    lands: int = 40,
 ) -> str:
     """Legal spells and lands observed in the format and castable with the deck's colours."""
     leg_col = getattr(Card, f"legality_{fmt}")
@@ -639,7 +703,7 @@ def _improvement_candidate_pool(
         if stats
         else db.query(Card).filter(leg_col == "legal").limit(200).all()
     )
-    spells, lands = [], []
+    spell_cards, land_cards = [], []
     for c in observed:
         if c.oracle_id in in_deck:
             continue
@@ -654,14 +718,14 @@ def _improvement_candidate_pool(
                 and not (set(c.color_identity or []) <= deck_colors)
             ):
                 continue
-            lands.append(c)
+            land_cards.append(c)
         elif not deck_colors or castable_with_colors(c, deck_colors):
-            spells.append(c)
+            spell_cards.append(c)
     if stats:
-        spells.sort(key=lambda c: -stats[c.oracle_id].overall_presence_pct)
-        lands.sort(key=lambda c: -stats[c.oracle_id].overall_presence_pct)
-    spell_lines = [card_line(c, stats.get(c.oracle_id)) for c in spells[:120]]
-    land_lines = [card_line(c, stats.get(c.oracle_id)) for c in lands[:40]]
+        spell_cards.sort(key=lambda c: -stats[c.oracle_id].overall_presence_pct)
+        land_cards.sort(key=lambda c: -stats[c.oracle_id].overall_presence_pct)
+    spell_lines = [card_line(c, stats.get(c.oracle_id)) for c in spell_cards[:spells]]
+    land_lines = [card_line(c, stats.get(c.oracle_id)) for c in land_cards[:lands]]
     return (
         f"=== POOL CARTE CANDIDATE LEGALI NEI COLORI DEL MAZZO ({len(spell_lines)} magie, {len(land_lines)} terre) ===\n"
         + ("\n".join(spell_lines) or "Nessuna magia osservata.")
@@ -826,6 +890,7 @@ def run_deck_improvement_skill(
     before_analysis = deck_engine.analyze_list(db, entries)
     before_structure = deck_engine.structure_summary(db, entries, fmt, requested_arch)
     pool_block = _improvement_candidate_pool(db, fmt, latest_snap, entries)
+    names = card_index(db, fmt)
 
     from app.services.quality import records_text
 
@@ -895,6 +960,15 @@ ANALISI PUNTI DEBOLI E MIGLIORAMENTO MAZZO:
         errors, improved_entries, warnings = _validate_and_apply_improvement_swaps(
             db, fmt, entries, candidate_out
         )
+        errors += illegal_mention_errors(
+            names, candidate_out.model_dump(), [a.name for a in ctx["archetypes"]]
+        )
+        # A card banned since the list was built must leave it: that is the first swap.
+        errors += [
+            f"La lista migliorata contiene ancora una carta non giocabile: {i.message} Proponi uno swap che la sostituisca."
+            for i in validate_deck_entries(fmt, improved_entries).issues
+            if i.code in ("CARD_BANNED", "CARD_NOT_LEGAL")
+        ]
         improvement_out = candidate_out
         if not errors:
             break

@@ -943,6 +943,12 @@ def _build_agent_system_instruction(
         )
     ui_context = " | ".join(ctx_parts)
     decks_index = _build_saved_decks_index(db)
+    from app.services.format_rules import format_rules_block
+
+    try:
+        format_rules = format_rules_block(db, req.format_id)
+    except Exception:  # noqa: BLE001 - the agent still answers without the catalog
+        format_rules = "Banlist non disponibile: verifica la legalità con search_cards_and_rulings."
 
     style_rules = (
         """3. **Stile di risposta (VOICE MODE CON GEMINI 3.8 LIVE)**:
@@ -962,6 +968,9 @@ CONTESTO ATTIVO DELL'UTENTE NELL'APP:
 INDICE DEI MAZZI ATTIVI SALVATI DALL'UTENTE NEL DATABASE:
 {decks_index}
 
+{format_rules}
+Per un mazzo di un altro formato valgono le regole di quel formato: prima di proporre una carta, verificane la legalità con `search_cards_and_rulings` indicando il formato.
+
 REGOLE OPERATIVE DELL'AGENTE (OBBLIGATORIE):
 1. **Usa i tuoi Tools in modo mirato ed efficiente**:
    - Hai già qui sopra l'indice aggiornato dei mazzi salvati dall'utente (con i loro `deck_id` esatti). Se l'utente chiede solo quali mazzi ha salvato o se hai accesso ai suoi mazzi, usa direttamente l'indice (o chiama `list_user_decks` una sola volta): **NON** chiamare `get_deck_details` in serie su tutti i mazzi e **NON** tirare a indovinare `deck_id` non presenti nell'indice!
@@ -974,6 +983,7 @@ REGOLE OPERATIVE DELL'AGENTE (OBBLIGATORIE):
    - Nei testi Oracle restituiti dai tool, il simbolo `¶` separa paragrafi e quindi **abilità distinte e indipendenti**. Una restrizione come `"Activate only if..."` si applica SOLO all'abilità nel medesimo paragrafo `¶`, mai alle altre abilità della carta.
    - Distingui sempre tra terre che entrano tappate su condizione (`"enters tapped unless..."`) e terre prive di `"enters tapped"` che entrano sempre stappate.
    - Verifica sempre valore di mana (CMC), bersagli legali e clausole `"can't be countered"` prima di suggerire una risposta o un counterspell.
+   - Non proporre mai carte bandite o fuori formato, nemmeno come alternativa o carta da considerare: la banlist sopra e i tool sono la fonte, non la memoria.
 {style_rules}
 """
 

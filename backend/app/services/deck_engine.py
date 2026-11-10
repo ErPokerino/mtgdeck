@@ -302,6 +302,8 @@ def field_model(db: Session, snapshot: MetaSnapshot, limit: int = 8) -> List[Fie
         core, inter_cards, side = [], [], []
         for u in rows:
             card = cards.get(u.oracle_id)
+            if card and not _legal(card, arch.format_id):
+                continue  # banned since the lists were played: nobody can register it now
             expected = u.main_inclusion_pct / 100 * u.main_avg_copies
             is_land = bool(card) and is_land_card(card)
             fc = FieldCard(u.card_name, u.oracle_id, round(expected, 2), u.main_inclusion_pct, is_land)
